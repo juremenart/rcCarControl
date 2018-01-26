@@ -1,0 +1,146 @@
+`timescale 1ps / 1ps
+
+module video_ctrl_tb
+  #(
+    // time periods
+    realtime               TP = 20.0ns // 50MHz
+    // RTL config
+    );
+
+   ////////////////////////////////////////////////////////////////////////////////
+   // signal generation
+   ////////////////////////////////////////////////////////////////////////////////
+
+   logic                                    clk ;
+   logic                                    rstn;
+   logic                                    s_clk;
+   logic                                    s_rstn;
+
+   logic                                    pwm0_pad, pwm1_pad;
+   logic                                    pwm0_rf, pwm1_rf, pwm0_sys, pwm1_sys;
+
+
+   // Clock
+   initial        clk = 1'b1;
+   always #(TP/2) clk = ~clk;
+
+   // Stream clock (currently hard-coded to twice the AXI speed)
+   initial        s_clk = 1'b1;
+   always #(TP/4) s_clk = ~s_clk;
+
+   // Reset
+   initial begin
+      rstn = 1'b0;
+      repeat(4) @(posedge clk);
+      rstn = 1'b1;
+   end
+
+   initial begin
+      s_rstn = 1'b0;
+      repeat(8) @(posedge s_clk);
+      s_rstn = 1'b1;
+   end
+
+   ////////////////////////////////////////////////////////////////////////////////
+   // test sequence
+   ////////////////////////////////////////////////////////////////////////////////
+
+   logic [32-1:0] ver;
+
+   initial begin
+      repeat(8) @(posedge clk);
+      video_stream.TREADY <= 1'b1;
+      axi_read('h00, ver);
+      $display("Video controller version = 0x%08x", ver);
+      // set some small frame count and enable test pattern generator
+      axi_write('h08, 32'h000a_0010); // 16x10 frame size
+      repeat(2) @(posedge clk);
+      axi_write('h04, 32'h0000_0001); // Enable pattern generation
+      repeat(200) @(posedge clk);
+      video_stream.TREADY <= 1'b0;
+      repeat(12) @(posedge clk);
+      video_stream.TREADY <= 1'b1;
+
+      // One more case to get it at EOL
+//      repeat(80) @(posedge clk);
+//      video_stream.TREADY <= 1'b0;
+//      repeat(10) @(posedge clk);
+//      video_stream.TREADY <= 1'b1;
+
+      repeat(93) @(posedge clk);
+      video_stream.TREADY <= 1'b0;
+      repeat(10) @(posedge clk);
+      video_stream.TREADY <= 1'b1;
+
+      // check stuff on waveform (counters, frame generation, ..)
+      repeat(360) @(posedge clk);
+      axi_write('h04, 32'h0000_0000); // Disable pattern generation
+      axi_write('h08, 32'h0010_0020); // 32x16 frame size
+      repeat(2) @(posedge clk);
+      axi_write('h04, 32'h0000_0001); // Enable pattern generation
+      repeat(1000) @(posedge clk);
+      $finish();
+   end
+
+   task axi_write (
+                   input logic [32-1:0] adr,
+                   input logic [32-1:0] dat
+                   );
+      int                               b;
+      bus_master.WriteTransaction (
+                                   .AWDelay (1),  .aw ('{
+                                                         addr: adr,
+                                                         prot: 0
+                                                         }),
+                                   .WDelay (0),   .w ('{
+                                                        data: dat,
+                                                        strb: '1
+                                                        }),
+                                   .BDelay (0),   .b (b)
+                                   );
+   endtask: axi_write
+
+   task axi_read (
+                  input logic [32-1:0]  adr,
+                  output logic [32-1:0] dat
+                  );
+      logic [32+2-1:0]                  r;
+      bus_master.ReadTransaction (
+                                  .ARDelay (0),  .ar ('{
+                                                        addr: adr,
+                                                        prot: 0
+                                                        }),
+                                  .RDelay (0),   .r (r)
+                                  //     .RDelay (0),   .r ('{
+                                  //                          data: dat,
+                                  //                          resp: rsp
+                                  //                         })
+                                  );
+      dat = r >> 2;
+   endtask: axi_read
+
+   ////////////////////////////////////////////////////////////////////////////////
+   // module instances
+   ////////////////////////////////////////////////////////////////////////////////
+   axi4_lite_if axi4_lite (.ACLK (clk), .ARESETn (rstn));
+   axi4_stream_if video_stream (.ACLK(s_clk), .ARESETn(s_rstn));
+
+   axi4_lite_master bus_master (.intf (axi4_lite));
+
+   video_ctrl_top video_ctrl_top_i
+     (
+      .axi_bus     (axi4_lite),
+      .axi_video_o (video_stream)
+      );
+
+
+   ////////////////////////////////////////////////////////////////////////////////
+   // waveforms
+   ////////////////////////////////////////////////////////////////////////////////
+//
+//   initial begin
+//      $dumpfile("video_ctrl_tb.vcd");
+//      $dumpvars(0, video_ctrl_tb);
+//   end
+
+endmodule: video_ctrl_tb

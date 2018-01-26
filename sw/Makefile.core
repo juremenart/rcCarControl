@@ -1,0 +1,52 @@
+# Local settings & targets
+MY_OBJ_DIR=$(OBJ_DIR)$(shell basename $(THIS_DIR))/
+OBJECTS=$(addprefix $(MY_OBJ_DIR), $(SOURCES:.cpp=.o))
+TARGET_OBJS=$(addprefix $(MY_OBJ_DIR), $(TARGETS:=.o))
+
+# To add new types add the here and also in the targets (see intf_%o as example)
+INTF_OBJECTS=$(addprefix $(MY_OBJ_DIR), $(INTF_SOURCES:../interface/%.cpp=intf_%.o))
+OBJECTS+=$(INTF_OBJECTS)
+
+
+# Compiler/linker parameters
+INC_DIRS=-I$(BASE_DIR)/interface -I$(BASE_DIR)/daemon
+CPPFLAGS+=-I$(THIS_DIR) $(INC_DIRS) -std=c++11 -Wall -g -Wextra
+LDFLAGS=-lpthread
+
+CXX=$(CROSS_COMPILE)g++
+CC=$(CROSS_COMPILE)gcc
+LD=$(CROSS_COMPILE)ld
+AS=$(CROSS_COMPILE)as
+AR=$(CROSS_COMPILE)ar
+NM=$(CROSS_COMPILE)nm
+OBJDUMP=$(CROSS_COMPILE)objdump
+OBJCOPY=$(CROSS_COMPILE)objcopy
+RANLIB=$(CROSS_COMPILE)ranlib
+STRIP=$(CROSS_COMPILE)strip
+
+all: make_dirs $(TARGETS)
+
+$(TARGETS): $(OBJECTS) $(TARGET_OBJS)
+	@echo "Linking $(addprefix $(BIN_DIR), $@)"
+	$(CXX) -o $(addprefix $(BIN_DIR), $@) $(MY_OBJ_DIR)$@.o $(OBJECTS) $(LDFLAGS)
+
+$(MY_OBJ_DIR)intf_%.o: ../interface/%.cpp $(INTF_HEADERS)
+	@echo "Compiling $< to $@"
+	$(CXX) -c $(CPPFLAGS) $< -o $@
+
+$(MY_OBJ_DIR)%.o: %.cpp $(HEADERS) $(INTF_HEADERS)
+	@echo "Compiling $< to $@"
+	$(CXX) -c $(CPPFLAGS) $< -o $@
+
+make_dirs:
+	@echo "OBJECTS=$(OBJECTS)"
+	@echo "INTF_OBJECTS=$(INTF_OBJECTS)"
+	@echo "TARGET_OBJS=$(TARGET_OBJS)"
+	@echo "THIS_DIR=$(THIS_DIR)"
+	@echo "MY_OBJ_DIR=$(MY_OBJ_DIR)"
+	@$(MKDIR) -p $(MY_OBJ_DIR)
+
+clean:
+	$(RM) -rf $(TARGET_BINS) $(MY_OBJ_DIR)
+
+.PHONY: all make_dirs clean

@@ -42,7 +42,7 @@ int main(int argc, char *argv[])
         std::vector<uint8_t> regVal;
         for(int i = 3; i < argc; i++)
         {
-            regVal.push_back((uint8_t)strtod(argv[i]), NULL);
+            regVal.push_back((uint8_t)strtod(argv[i], NULL));
         }
         std::cout << "Write " << regVal.size() << " bytes starting with address"
                   << " 0x" << std::hex << (int)regAddr << std::endl;

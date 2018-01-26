@@ -102,8 +102,14 @@ ssize_t rccI2cCtrl::write(const uint8_t regAddr,
         return -1;
     }
 
-    ssize_t bytes = write(std::vector<uint8_t>(regAddr));
-    bytes += write(data);
+    std::vector<uint8_t> wData;
+    wData.push_back(regAddr);
+
+    for(int i = 0; i < (int)data.size(); i++)
+    {
+        wData.push_back(data[i]);
+    }
+    ssize_t bytes = write(wData);
 
     return bytes;
 }
@@ -128,7 +134,8 @@ ssize_t rccI2cCtrl::read(const uint8_t regAddr,
         return -1;
     }
 
-    bytes = ::read(mDevFd, &data[0], data.size());
+    uint8_t *pData = data.data();
+    bytes = ::read(mDevFd, pData, data.size());
     if(bytes < 0)
     {
         std::cerr << "rccI2cCtrl::read() read failed: "
@@ -155,12 +162,15 @@ ssize_t rccI2cCtrl::write(const uint16_t regAddr,
         return -1;
     }
 
-    std::vector<uint8_t> byteAddr;
-    byteAddr.push_back((regAddr >> 8) & 0xFF);
-    byteAddr.push_back((regAddr >> 0) & 0xFF);
+    std::vector<uint8_t> wData;
+    wData.push_back((regAddr >> 8) & 0xFF);
+    wData.push_back((regAddr >> 0) & 0xFF);
 
-    ssize_t bytes = write(std::vector<uint8_t>(byteAddr));
-    bytes += write(data);
+    for(int i = 0; i < (int)data.size(); i++)
+    {
+        wData.push_back(data[i]);
+    }
+    ssize_t bytes = write(wData);
 
     return bytes;
 }

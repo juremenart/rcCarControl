@@ -1,0 +1,8 @@
+bootargs=console=ttyPS0,115200 root=/dev/mmcblk0p2 rw rootwait earlyprintk
+bitstream_image=system.bit
+script_address=0x80000
+script_name=boot.script.img
+load_script=source ${script_address}
+boot_script=load mmc 0:1 ${script_address} ${script_name} && source ${script_address} 
+uenvcmd=run boot_script
+

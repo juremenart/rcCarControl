@@ -8,7 +8,7 @@
 
 class rccOv7670Ctrl : public rccI2cCtrl {
 public:
-    rccOv7670Ctrl(uint8_t devNum);
+    rccOv7670Ctrl(uint8_t devNum = 0);
     ~rccOv7670Ctrl(void);
 
 private:

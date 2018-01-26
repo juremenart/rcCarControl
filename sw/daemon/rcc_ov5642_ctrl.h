@@ -34,7 +34,7 @@ public:
     typedef std::vector<ov5642_mode_entry_t> ov5642_mode_table_t;
 
 public:
-    rccOv5642Ctrl(uint8_t devNum);
+    rccOv5642Ctrl(uint8_t devNum = 0);
     ~rccOv5642Ctrl(void);
 
     bool init(ov5642_mode_t mode = ov5642_720p_video);

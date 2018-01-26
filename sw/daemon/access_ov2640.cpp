@@ -11,7 +11,7 @@
 
 #include <iostream>
 
-#include "rcc_ov7670_ctrl.h"
+#include "rcc_ov2640_ctrl.h"
 
 void usage(const char *name)
 {
@@ -21,8 +21,8 @@ void usage(const char *name)
 
 int main(int argc, char *argv[])
 {
-    // OV7670
-    rccOv7670Ctrl *ov7670Ctrl = new rccOv7670Ctrl(0);
+    // OV2640
+    rccOv2640Ctrl *ov2640Ctrl = new rccOv2640Ctrl(0);
 
     if(argc < 4)
     {
@@ -30,7 +30,7 @@ int main(int argc, char *argv[])
         return -1;
     }
 
-    if(!ov7670Ctrl->open())
+    if(!ov2640Ctrl->open())
         return -1;
 
     uint8_t regAddr = (uint8_t)strtod(argv[2], NULL);
@@ -46,7 +46,7 @@ int main(int argc, char *argv[])
         }
         std::cout << "Write " << regVal.size() << " bytes starting with address"
                   << " 0x" << std::hex << (int)regAddr << std::endl;
-        if(ov7670Ctrl->write(regAddr, regVal) < 0)
+        if(ov2640Ctrl->write(regAddr, regVal) < 0)
         {
             std::cerr << "write failed!" << std::endl;
             return -1;
@@ -60,7 +60,7 @@ int main(int argc, char *argv[])
         int numOfRegs = atoi(argv[3]);
         regVal.resize(numOfRegs);
 
-        int bytes = ov7670Ctrl->read(regAddr, regVal);
+        int bytes = ov2640Ctrl->read(regAddr, regVal);
 
         if(bytes < 0)
         {

@@ -10,6 +10,8 @@
 
 #include <iostream>
 #include <sstream>
+#include <chrono>
+#include <thread> // for this_thread::sleep_for()
 
 #include "rcc_ov5642_ctrl.h"
 
@@ -80,6 +82,8 @@ bool rccOv5642Ctrl::init(ov5642_mode_t mode)
     std::cout << "Initializing mode: " << cOv5642ModeTable[mode].shortDesc
               << std::endl;
 
+    reset();
+
     ov5642_init_vect_t *pTable = cOv5642ModeTable[mode].pInitTable;
     for(int i = 0; i < (int)pTable->size(); i++)
     {
@@ -95,5 +99,19 @@ bool rccOv5642Ctrl::init(ov5642_mode_t mode)
     std::cout << "Initialization successful" << std::endl;
 
     // Initialize the init struct
+    return true;
+}
+
+bool rccOv5642Ctrl::reset(void)
+{
+    if(!isOpen())
+    {
+        return false;
+    }
+
+    write(cSysCtrlAddr, cSysCtrl_SwRst | cSysCtrl_Rsvd);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
     return true;
 }

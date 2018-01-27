@@ -16,6 +16,23 @@
 
 // TODO: Add logger() here instead of std::cerr
 
+// TODO: Add why burst read is not working? Nice example to test is below.
+// I checked also with scope and noticed that indeed the values returned from
+// the sensor are all '1' so it's not SW problem.
+//
+//snickerdoodle@snickerdoodle:~/rcCarControl/sw$ sudo ./bin/access_ov5642 -r 0x3009 3
+//I2C device opened and slave address set to : 0x3c
+//Received data:
+//   Reg=0x3009   Value=1
+//   Reg=0x300a   Value=1
+//   Reg=0x300b   Value=1
+//snickerdoodle@snickerdoodle:~/rcCarControl/sw$ sudo ./bin/access_ov5642 -r 0x300a 3
+//I2C device opened and slave address set to : 0x3c
+//Received data:
+//   Reg=0x300a   Value=56
+//   Reg=0x300b   Value=42
+//   Reg=0x300c   Value=1
+
 rccI2cCtrl::rccI2cCtrl(uint8_t devNum, uint8_t slaveAddr)
     : mDevFd(-1), mDevNum(devNum), mSlaveAddr(slaveAddr)
 {
@@ -124,29 +141,25 @@ ssize_t rccI2cCtrl::read(const uint8_t regAddr,
         return -1;
     }
 
-    std::vector<uint8_t> byteAddr;
-    byteAddr.push_back(regAddr);
+    // stupid but it seems that burst read has some problems on OV5642
+    int bytes = 0;
 
-
-    ssize_t bytes = write(byteAddr);
-    if(bytes < 0)
+    for(int i = 0; i < (int)data.size(); i++)
     {
-        return -1;
-    }
-
-    uint8_t *pData = data.data();
-    bytes = ::read(mDevFd, pData, data.size());
-    if(bytes < 0)
-    {
-        std::cerr << "rccI2cCtrl::read() read failed: "
-                  << strerror(errno) << std::endl;
-        return -1;
-    }
-    else if(bytes != (ssize_t)data.size())
-    {
-        std::ostringstream strStream;
-        std::cerr << "rccI2cCtrl::read() read bytes not expected: "
-                  << data.size() << " != " << bytes << std::endl;
+        std::vector<uint8_t> byteAddr;
+        byteAddr.push_back(regAddr+i);
+        ssize_t wBytes = write(byteAddr);
+        if(wBytes < 0)
+        {
+            return -1;
+        }
+        bytes += ::read(mDevFd, &data[i], 1);
+        if(bytes <= 0)
+        {
+            std::cerr << "rccI2cCtrl::read() read failed: "
+                      << strerror(errno) << std::endl;
+            return -1;
+        }
     }
 
     return bytes;
@@ -185,28 +198,28 @@ ssize_t rccI2cCtrl::read(const uint16_t regAddr,
         return -1;
     }
 
-    std::vector<uint8_t> byteAddr;
-    byteAddr.push_back((regAddr >> 8) & 0xFF);
-    byteAddr.push_back((regAddr >> 0) & 0xFF);
+    // stupid but it seems that burst read has some problems on OV5642
+    int bytes = 0;
 
-    ssize_t bytes = write(byteAddr);
-    if(bytes < 0)
+    for(int i = 0; i < (int)data.size(); i++)
     {
-        return -1;
-    }
+        std::vector<uint8_t> byteAddr;
 
-    bytes = ::read(mDevFd, &data[0], data.size());
-    if(bytes < 0)
-    {
-        std::cerr << "rccI2cCtrl::read() read failed: "
-                  << strerror(errno) << std::endl;
-        return -1;
-    }
-    else if(bytes != (ssize_t)data.size())
-    {
-        std::ostringstream strStream;
-        std::cerr << "rccI2cCtrl::read() read bytes not expected: "
-                  << data.size() << " != " << bytes << std::endl;
+        byteAddr.push_back(((regAddr+i) >> 8) & 0xFF);
+        byteAddr.push_back(((regAddr+i) >> 0) & 0xFF);
+
+        ssize_t wBytes = write(byteAddr);
+        if(wBytes < 0)
+        {
+            return -1;
+        }
+        bytes += ::read(mDevFd, &data[i], 1);
+        if(bytes <= 0)
+        {
+            std::cerr << "rccI2cCtrl::read() read failed: "
+                      << strerror(errno) << std::endl;
+            return -1;
+        }
     }
 
     return bytes;

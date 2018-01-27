@@ -12,6 +12,10 @@ private:
     const uint8_t  cChipIdMsb  = 0x56;
     const uint8_t  cChipIdLsb  = 0x42;
 
+    const uint16_t cSysCtrlAddr    = 0x3008;
+    const uint8_t  cSysCtrl_SwRst  = 0x80;
+    const uint8_t  cSysCtrl_SwPwdn = 0x40;
+    const uint8_t  cSysCtrl_Rsvd   = 0x02; // Reserved, shoudl be set
 public:
     typedef struct ov5642_init_s {
         uint16_t regAddr;
@@ -38,6 +42,8 @@ public:
     ~rccOv5642Ctrl(void);
 
     bool init(ov5642_mode_t mode = ov5642_720p_video);
+    bool reset(void);
+
 private:
 };
 

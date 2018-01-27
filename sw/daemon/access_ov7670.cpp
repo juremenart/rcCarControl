@@ -24,7 +24,7 @@ int main(int argc, char *argv[])
     // OV7670
     rccOv7670Ctrl *ov7670Ctrl = new rccOv7670Ctrl(0);
 
-    if(argc < 4)
+    if(argc < 3)
     {
         usage(argv[0]);
         return -1;
@@ -39,6 +39,12 @@ int main(int argc, char *argv[])
     {
         // Write operation - argv[2] is regAddr and all subsequent values
         // are values to be written
+        if(argc < 4)
+        {
+            usage(argv[0]);
+            return -1;
+        }
+
         std::vector<uint8_t> regVal;
         for(int i = 3; i < argc; i++)
         {
@@ -57,7 +63,11 @@ int main(int argc, char *argv[])
         // Read operation - argv[2] is regAddr and argv[3] is number of
         // register to be read-out
         std::vector<uint8_t> regVal;
-        int numOfRegs = atoi(argv[3]);
+
+        int numOfRegs = 1;
+
+        if(argc == 4)
+            numOfRegs = atoi(argv[3]);
         regVal.resize(numOfRegs);
 
         int bytes = ov7670Ctrl->read(regAddr, regVal);
@@ -77,7 +87,7 @@ int main(int argc, char *argv[])
         for(int i = 0; i < bytes; i++)
         {
             std::cout << "   Reg=0x" << std::hex << (int)(regAddr+i)
-                      << "   Value=" << std::hex << (int)(regVal[i])
+                      << "   Value=0x" << std::hex << (int)(regVal[i])
                       << std::endl;
         }
     } else

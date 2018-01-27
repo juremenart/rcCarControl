@@ -24,7 +24,7 @@ int main(int argc, char *argv[])
     // OV5642
     rccOv5642Ctrl *ov5642Ctrl = new rccOv5642Ctrl(0);
 
-    if(argc < 4)
+    if(argc < 3)
     {
         usage(argv[0]);
         return -1;
@@ -40,6 +40,12 @@ int main(int argc, char *argv[])
         // Write operation - argv[2] is regAddr and all subsequent values
         // are values to be written
         std::vector<uint8_t> regVal;
+
+        if(argc < 4)
+        {
+            usage(argv[0]);
+            return -1;
+        }
         for(int i = 3; i < argc; i++)
         {
             regVal.push_back((uint8_t)strtod(argv[i], NULL));
@@ -57,7 +63,11 @@ int main(int argc, char *argv[])
         // Read operation - argv[2] is regAddr and argv[3] is number of
         // register to be read-out
         std::vector<uint8_t> regVal;
-        int numOfRegs = atoi(argv[3]);
+
+        int numOfRegs = 1;
+
+        if(argc == 4)
+            numOfRegs = atoi(argv[3]);
         regVal.resize(numOfRegs);
 
         int bytes = ov5642Ctrl->read(regAddr, regVal);
@@ -77,7 +87,7 @@ int main(int argc, char *argv[])
         for(int i = 0; i < bytes; i++)
         {
             std::cout << "   Reg=0x" << std::hex << (int)(regAddr+i)
-                      << "   Value=" << std::hex << (int)(regVal[i])
+                      << "   Value=0x" << std::hex << (int)(regVal[i])
                       << std::endl;
         }
     } else

@@ -8,6 +8,7 @@ public:
     rccI2cCtrl(uint8_t devNum, uint8_t slaveAddr);
     ~rccI2cCtrl(void);
 
+    bool isOpen() { return (mDevFd > 0); };
     int open();
     int close();
 

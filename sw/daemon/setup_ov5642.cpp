@@ -30,7 +30,6 @@ int main(int argc, char *argv[])
     if(!ov5642Ctrl->init(mode))
         return -1;
 
-
     std::vector<uint8_t> chipId;
     chipId.resize(2);
 

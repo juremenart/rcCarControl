@@ -131,6 +131,43 @@ ssize_t rccI2cCtrl::write(const uint8_t regAddr,
     return bytes;
 }
 
+ssize_t rccI2cCtrl::write(const uint8_t regAddr, uint8_t data)
+{
+    std::vector<uint8_t> dArray;
+    dArray.push_back(data);
+    return write(regAddr, dArray);
+}
+
+ssize_t rccI2cCtrl::write(const uint16_t regAddr, uint8_t data)
+{
+    std::vector<uint8_t> dArray;
+    dArray.push_back(data);
+    return write(regAddr, dArray);
+}
+
+ssize_t rccI2cCtrl::write(const uint16_t regAddr,
+                          const std::vector<uint8_t> &data)
+{
+    if(mDevFd <= 0)
+    {
+        std::cerr << "rccI2cCtrl::write() I2C module not initialized"
+                  << std::endl;
+        return -1;
+    }
+
+    std::vector<uint8_t> wData;
+    wData.push_back((regAddr >> 8) & 0xFF);
+    wData.push_back((regAddr >> 0) & 0xFF);
+
+    for(int i = 0; i < (int)data.size(); i++)
+    {
+        wData.push_back(data[i]);
+    }
+    ssize_t bytes = write(wData);
+
+    return bytes;
+}
+
 ssize_t rccI2cCtrl::read(const uint8_t regAddr,
                          std::vector<uint8_t> &data)
 {
@@ -165,27 +202,15 @@ ssize_t rccI2cCtrl::read(const uint8_t regAddr,
     return bytes;
 }
 
-ssize_t rccI2cCtrl::write(const uint16_t regAddr,
-                          const std::vector<uint8_t> &data)
+ssize_t rccI2cCtrl::read(const uint8_t regAddr, uint8_t &data)
 {
-    if(mDevFd <= 0)
+    std::vector<uint8_t> dArray(1);
+    if(read(regAddr, dArray) < 0)
     {
-        std::cerr << "rccI2cCtrl::write() I2C module not initialized"
-                  << std::endl;
         return -1;
     }
-
-    std::vector<uint8_t> wData;
-    wData.push_back((regAddr >> 8) & 0xFF);
-    wData.push_back((regAddr >> 0) & 0xFF);
-
-    for(int i = 0; i < (int)data.size(); i++)
-    {
-        wData.push_back(data[i]);
-    }
-    ssize_t bytes = write(wData);
-
-    return bytes;
+    data = dArray[0];
+    return 1;
 }
 
 ssize_t rccI2cCtrl::read(const uint16_t regAddr,
@@ -225,4 +250,13 @@ ssize_t rccI2cCtrl::read(const uint16_t regAddr,
     return bytes;
 }
 
-
+ssize_t rccI2cCtrl::read(const uint16_t regAddr, uint8_t &data)
+{
+    std::vector<uint8_t> dArray(1);
+    if(read(regAddr, dArray) < 0)
+    {
+        return -1;
+    }
+    data = dArray[0];
+    return 1;
+}

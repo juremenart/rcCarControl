@@ -84,16 +84,9 @@ bool rccOv5642Ctrl::init(ov5642_mode_t mode)
 
     reset();
 
-    ov5642_init_vect_t *pTable = cOv5642ModeTable[mode].pInitTable;
-    for(int i = 0; i < (int)pTable->size(); i++)
+    if(!configure(mode, true))
     {
-        if(write(pTable->at(i).regAddr, pTable->at(i).regValue) < 0)
-        {
-            std::cerr << "Initialization failure at " << i << ", quitting"
-                      << std::endl;
-            close();
-            return false;
-        }
+        return false;
     }
 
     std::cout << "Initialization successful" << std::endl;
@@ -112,6 +105,50 @@ bool rccOv5642Ctrl::reset(void)
     write(cSysCtrlAddr, cSysCtrl_SwRst | cSysCtrl_Rsvd);
 
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
+
+    return true;
+}
+
+bool rccOv5642Ctrl::configure(ov5642_mode_t mode, bool verify)
+{
+    if(mode >= ov5642_mode_nonexisting)
+    {
+        std::cerr << "Unknown mode: " << mode << " (max valid is: "
+                  << (ov5642_mode_nonexisting-1) << std::endl;
+        return false;
+    }
+
+    ov5642_init_vect_t *pTable = cOv5642ModeTable[mode].pInitTable;
+    for(int i = 0; i < (int)pTable->size(); i++)
+    {
+        uint8_t retVal;
+
+        if(write(pTable->at(i).regAddr, pTable->at(i).regValue) < 0)
+        {
+            std::cerr << "Initialization failure at " << i << ", quitting"
+                      << std::endl;
+            close();
+            return false;
+        }
+
+        if(verify)
+        {
+            if(read(pTable->at(i).regAddr, retVal) < 0)
+            {
+                std::cerr << "Initialization failure at reading " << i
+                          << std::endl;
+                close();
+                return false;
+            }
+            if(retVal != pTable->at(i).regValue)
+            {
+                std::cerr << "Written and verified data don't agree for 0x"
+                          << std::hex << (int)pTable->at(i).regAddr
+                          << ": 0x" << (int)retVal << " != 0x"
+                          << (int)pTable->at(i).regValue << std::endl;
+            }
+        }
+    }
 
     return true;
 }

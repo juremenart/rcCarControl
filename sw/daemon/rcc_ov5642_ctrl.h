@@ -42,6 +42,8 @@ public:
     ~rccOv5642Ctrl(void);
 
     bool init(ov5642_mode_t mode = ov5642_720p_video);
+    bool configure(ov5642_mode_t mode = ov5642_720p_video,
+                   bool verify = false);
     bool reset(void);
 
 private:

@@ -15,19 +15,14 @@ public:
     ssize_t write(const std::vector<uint8_t> data);
 
     ssize_t write(const uint8_t regAddr, const std::vector<uint8_t> data);
+    ssize_t write(const uint8_t regAddr, uint8_t data);
     ssize_t write(const uint16_t regAddr, const std::vector<uint8_t> &data);
-    ssize_t write(const uint8_t regAddr, uint8_t data)
-    {
-        return write(regAddr, std::vector<uint8_t>(data));
-    };
-
-    ssize_t write(const uint16_t regAddr, uint8_t data)
-    {
-        return write(regAddr, std::vector<uint8_t>(data));
-    };
+    ssize_t write(const uint16_t regAddr, uint8_t data);
 
     ssize_t read(const uint8_t regAddr, std::vector<uint8_t> &data);
+    ssize_t read(const uint8_t regAddr, uint8_t &data);
     ssize_t read(const uint16_t regAddr, std::vector<uint8_t> &data);
+    ssize_t read(const uint16_t regAddr, uint8_t &data);
 
 private:
     int     mDevFd;

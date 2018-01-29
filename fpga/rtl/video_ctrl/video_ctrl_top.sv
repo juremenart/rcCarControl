@@ -23,9 +23,14 @@ module video_ctrl_top #(
    logic [31:0] rx_size_status;
    logic [31:0] rx_frame_cnts;
    logic        rx_rst_size_err;
+   logic        cam_rstn;
+   logic        cam_pwdn;
 
    axi4_stream_if axi_tp_gen_video(.ACLK(FCLK_CLK1), .ARESETn(FCLK_RESET1_N));
    axi4_stream_if axi_bt656_video(.ACLK(FCLK_CLK1), .ARESETn(FCLK_RESET1_N));
+
+   assign bt656_video_i.RSTN = cam_rstn;
+   assign bt656_video_i.PWDN = cam_pwdn;
 
    // TODO: tp_* signals are not sync'd to stream clock!
    video_ctrl_axi #(.DW(DW), .AW(AW), .VER(VER)) video_ctrl_axi_i
@@ -42,7 +47,10 @@ module video_ctrl_top #(
       .pure_bt656_o(pure_bt656),
       .rx_size_status_i(rx_size_status),
       .rx_rst_size_err_o(rx_rst_size_err),
-      .rx_frame_cnts_i(rx_frame_cnts)
+      .rx_frame_cnts_i(rx_frame_cnts),
+
+      .cam_rstn_o(cam_rstn),
+      .cam_pwdn_o(cam_pwdn)
       );
 
    // TODO: Be careful about reset for bt656_to_axi_stream!

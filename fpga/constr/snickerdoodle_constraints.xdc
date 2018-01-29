@@ -1,7 +1,7 @@
 # Timing constraints
-# PCLK for BT 656 is 'nominal 27MHz' - check how to best define it
+# PCLK for OV5642 is 24MHz - check how to best define it
 # Define also full input parallel interface if needed
-create_clock -name cam_pclk -period 35  [get_ports {cam_pclk_i}]
+create_clock -name cam_pclk -period 41.667  [get_ports {cam_pclk_i}]
 # Mark this input clock as asynchronous to all other clocks (data is sync'd with FIFO)
 set_clock_groups -asynchronous -group [get_clocks {cam_pclk}]
 
@@ -33,12 +33,12 @@ set_property IOSTANDARD     LVCMOS33    [get_ports {cam_iic_scl_io}]
 set_property PULLUP         TRUE        [get_ports {cam_iic_*}]
 
 # Camera Parallel Interface (8-bit for now)
-# PCLK/MCLK - JB1.36 - important to be connected to MRCC/SRCC clock port
-set_property PACKAGE_PIN    U19         [get_ports {cam_pclk_i}]
+# PCLK/MCLK - JB1.35 - important to be connected to MRCC/SRCC clock port
+set_property PACKAGE_PIN    U14         [get_ports {cam_pclk_i}]
 set_property IOSTANDARD     LVCMOS33    [get_ports {cam_pclk_i}]
 
-# HREF/HSYNC/VSYNC - JB1.35, JB1.37, JB1.38
-set_property PACKAGE_PIN    U14         [get_ports {cam_href_i}]
+# HREF/HSYNC/VSYNC - JB1.36, JB1.37, JB1.38
+set_property PACKAGE_PIN    U19         [get_ports {cam_href_i}]
 set_property IOSTANDARD     LVCMOS33    [get_ports {cam_href_i}]
 
 set_property PACKAGE_PIN    U15         [get_ports {cam_hsync_i}]
@@ -47,7 +47,14 @@ set_property IOSTANDARD     LVCMOS33    [get_ports {cam_hsync_i}]
 set_property PACKAGE_PIN    U18         [get_ports {cam_vsync_i}]
 set_property IOSTANDARD     LVCMOS33    [get_ports {cam_vsync_i}]
 
-# Data [7:0] - JB1.32, JB1.31, JB1.30, JB1.29, JB1.26, JB1.25, JB1.24, JB1.23
+# RSTN/PWDN JB1.20, JB1.19
+set_property PACKAGE_PIN    T14         [get_ports {cam_rstn_o}]
+set_property IOSTANDARD     LVCMOS33    [get_ports {cam_rstn_o}]
+
+set_property PACKAGE_PIN    V13         [get_ports {cam_pwdn_o}]
+set_property IOSTANDARD     LVCMOS33    [get_ports {cam_pwdn_o}]
+
+# Data [9:0] - JB1.32, JB1.31, JB1.30, JB1.29, JB1.26, JB1.25, JB1.24, JB1.23
 set_property PACKAGE_PIN    V15         [get_ports {cam_data_i[7]}]
 set_property IOSTANDARD     LVCMOS33    [get_ports {cam_data_i[7]}]
 
@@ -71,7 +78,6 @@ set_property IOSTANDARD     LVCMOS33    [get_ports {cam_data_i[1]}]
 
 set_property PACKAGE_PIN    T16         [get_ports {cam_data_i[0]}]
 set_property IOSTANDARD     LVCMOS33    [get_ports {cam_data_i[0]}]
-
 
 
 ###############################################################################

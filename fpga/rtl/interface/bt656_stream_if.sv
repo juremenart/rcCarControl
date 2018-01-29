@@ -1,6 +1,6 @@
 interface bt656_stream_if
   #(
-    int unsigned DW = 10 // data width
+    int unsigned DW = 8 // data width
     )
    (
     );
@@ -21,6 +21,9 @@ interface bt656_stream_if
    logic          HSYNC;    // horizontal sync - ignored with current implementation
    logic          VSYNC;    // vertical sync
 
+   logic          RSTN;     // Sensor RESETn (active low)
+   logic          PWDN;     // Sensor Power Down (active high)
+
    // Using this chip: http://www.analog.com/media/en/technical-documentation/data-sheets/ADV7280.PDF
    // BT.656 recommendation:
    // http://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.656-5-200712-I!!PDF-E.pdf
@@ -31,7 +34,9 @@ interface bt656_stream_if
               output DATA,
               output HREF,
               output HSYNC,
-              output VSYNC
+              output VSYNC,
+              input  RSTN,
+              input  PWDN
               );
 
    // drain
@@ -40,7 +45,9 @@ interface bt656_stream_if
               input DATA,
               input HREF,
               input HSYNC,
-              input VSYNC
+              input VSYNC,
+              input RSTN,
+              input PWDN
               );
 
    // monitor
@@ -49,7 +56,9 @@ interface bt656_stream_if
               input DATA,
               input HREF,
               input HSYNC,
-              input VSYNC
+              input VSYNC,
+              input RSTN,
+              input PWDN
               );
 
 endinterface: bt656_stream_if

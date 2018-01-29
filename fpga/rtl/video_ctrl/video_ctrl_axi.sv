@@ -20,7 +20,9 @@ module video_ctrl_axi #(
     output logic        pure_bt656_o,
     input  logic [31:0] rx_size_status_i,
     output logic        rx_rst_size_err_o,
-    input  logic [31:0] rx_frame_cnts_i
+    input  logic [31:0] rx_frame_cnts_i,
+    output logic        cam_rstn_o,
+    output logic        cam_pwdn_o
     );
 
    // Register map
@@ -50,6 +52,8 @@ module video_ctrl_axi #(
    // BT656 receiver registers
    reg                     rx_enable;
    reg                     pure_bt656;
+   reg                     cam_rstn;
+   reg                     cam_pwdn;
 
    // Write registers
    always_ff @(posedge axi_bus.ACLK)
@@ -61,6 +65,8 @@ module video_ctrl_axi #(
           tp_height_r <= 480;
           rx_enable   <= 1'b0;
           pure_bt656  <= 1'b0;
+          cam_rstn    <= 1'b1;
+          cam_pwdn    <= 1'b0;
        end
      else if (slv_reg_wren)
        begin
@@ -82,6 +88,8 @@ module video_ctrl_axi #(
               begin
                  rx_enable   <= axi_bus.WDATA[0];
                  pure_bt656  <= axi_bus.WDATA[1];
+                 cam_rstn    <= axi_bus.WDATA[2];
+                 cam_pwdn    <= axi_bus.WDATA[3];
               end
             RX_SIZE_STAT_ADDR:
               begin
@@ -105,7 +113,7 @@ module video_ctrl_axi #(
             TP_SIZE_ADDR:
               axi_bus.RDATA <= { {5{1'b0}}, tp_height_r, {5{1'b0}}, tp_width_r };
             RX_CTRL_ADDR:
-              axi_bus.RDATA <= { {30{1'b0}}, pure_bt656, rx_enable };
+              axi_bus.RDATA <= { {28{1'b0}}, cam_pwdn, cam_rstn, pure_bt656, rx_enable };
             RX_SIZE_STAT_ADDR:
               axi_bus.RDATA <= rx_size_status_i;
             RX_FRAME_CNTS_ADDR:
@@ -125,6 +133,9 @@ module video_ctrl_axi #(
 
    assign rx_enable_o   = rx_enable;
    assign pure_bt656_o  = pure_bt656;
+
+   assign cam_rstn_o    = cam_rstn;
+   assign cam_pwdn_o    = cam_pwdn;
 
    // Example-specific design signals
    // local parameter for addressing 32 bit / 64 bit DW

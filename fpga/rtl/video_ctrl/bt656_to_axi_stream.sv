@@ -2,7 +2,7 @@
 
 module bt656_to_axi_stream
   #(
-    int unsigned DW = 10 // data width
+    int unsigned DW = 8 // data width
     )
   (
    bt656_stream_if.d bt656_stream_i,
@@ -160,9 +160,9 @@ module bt656_to_axi_stream
    // Input line/field/frame detection
    // Do header/SAV/EAV detection only if configured for 'pure bt656'
    assign hdr_det = pure_bt656_i &&
-                    (in_data[input_data_ffs-1] == 10'h3FF) &&
-                    (in_data[input_data_ffs-2] == 10'h00) &&
-                    (in_data[input_data_ffs-3] == 10'h00) &&
+                    (in_data[input_data_ffs-1] == 8'hFF) &&
+                    (in_data[input_data_ffs-2] == 8'h00) &&
+                    (in_data[input_data_ffs-3] == 8'h00) &&
                     (in_data[input_data_ffs-4][bt656_stream_i.HDR_BIT_1] == 1'b1);
    assign eav_det = hdr_det &&
                     (in_data[input_data_ffs-4][bt656_stream_i.HDR_BIT_HBLANK] == 1'b1);

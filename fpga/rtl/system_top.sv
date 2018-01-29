@@ -41,7 +41,9 @@ module bd_system_wrapper
    cam_href_i,
    cam_hsync_i,
    cam_vsync_i,
-   cam_data_i);
+   cam_data_i,
+   cam_rstn_o,
+   cam_pwdn_o);
 
    inout [14:0]DDR_addr;
    inout [2:0] DDR_ba;
@@ -74,7 +76,9 @@ module bd_system_wrapper
    input        cam_href_i;
    input        cam_hsync_i;
    input        cam_vsync_i;
-   input [9:0]  cam_data_i;
+   input [7:0]  cam_data_i;
+   output       cam_rstn_o;
+   output       cam_pwdn_o;
 
    wire [14:0]  DDR_addr;
    wire [2:0]   DDR_ba;
@@ -134,6 +138,8 @@ module bd_system_wrapper
    assign bt656_input_video.HSYNC = cam_hsync_i;
    assign bt656_input_video.VSYNC = cam_vsync_i;
    assign bt656_input_video.DATA  = cam_data_i;
+   assign cam_rstn_o = bt656_input_video.RSTN;
+   assign cam_pwdn_o = bt656_input_video.PWDN;
 
    sys_ctrl_top sys_ctrl_top_i
      (.axi_bus(axi_bus_sys_ctrl),

@@ -14,13 +14,22 @@ module video_ctrl_axi #(
     output logic        tp_en_gen_o,
     output logic [1:0]  tp_type_o,
     output logic [10:0] tp_width_o,
-    output logic [10:0] tp_height_o
+    output logic [10:0] tp_height_o,
+
+    output logic        rx_enable_o,
+    output logic        pure_bt656_o,
+    input  logic [31:0] rx_size_status_i,
+    output logic        rx_rst_size_err_o,
+    input  logic [31:0] rx_frame_cnts_i
     );
 
    // Register map
-   localparam VER_ADDR     = 6'h0; // RO  Version register
-   localparam TP_CTRL_ADDR = 6'h1; // R/W Test Pattern Control register
-   localparam TP_SIZE_ADDR = 6'h2; // R/W Test Size register (width, height)
+   localparam VER_ADDR           = 6'h0; // RO  Version register
+   localparam TP_CTRL_ADDR       = 6'h1; // R/W Test Pattern Control register
+   localparam TP_SIZE_ADDR       = 6'h2; // R/W Test Size register (width, height)
+   localparam RX_CTRL_ADDR       = 6'h3; // R/W Receiver control register
+   localparam RX_SIZE_STAT_ADDR  = 6'h4; // R/C  Size Status register
+   localparam RX_FRAME_CNTS_ADDR = 6'h5; // RO  Frame counter (with AXI clock)
 
    //----------------------------------------------
    //-- Signals for user logic register space example
@@ -38,6 +47,10 @@ module video_ctrl_axi #(
    reg [1:0]               tp_type_r;
    reg [10:0]              tp_width_r, tp_height_r;
 
+   // BT656 receiver registers
+   reg                     rx_enable;
+   reg                     pure_bt656;
+
    // Write registers
    always_ff @(posedge axi_bus.ACLK)
      if (axi_bus.ARESETn == 1'b0)
@@ -46,9 +59,12 @@ module video_ctrl_axi #(
           tp_type_r   <= 2'b00;
           tp_width_r  <= 640;
           tp_height_r <= 480;
+          rx_enable   <= 1'b0;
+          pure_bt656  <= 1'b0;
        end
      else if (slv_reg_wren)
        begin
+          rx_rst_size_err_o <= 1'b0;
           case (axi_awaddr)
             //VER_ADDR:
               // version register - read only
@@ -61,6 +77,15 @@ module video_ctrl_axi #(
               begin
                  tp_width_r  <= axi_bus.WDATA[10:0];
                  tp_height_r <= axi_bus.WDATA[26:16];
+              end
+            RX_CTRL_ADDR:
+              begin
+                 rx_enable   <= axi_bus.WDATA[0];
+                 pure_bt656  <= axi_bus.WDATA[1];
+              end
+            RX_SIZE_STAT_ADDR:
+              begin
+                 rx_rst_size_err_o <= 1'b1;
               end
           endcase
        end
@@ -79,6 +104,12 @@ module video_ctrl_axi #(
               axi_bus.RDATA <= { {26{1'b0}}, tp_type_r, {3{1'b0}}, tp_en_gen_r };
             TP_SIZE_ADDR:
               axi_bus.RDATA <= { {5{1'b0}}, tp_height_r, {5{1'b0}}, tp_width_r };
+            RX_CTRL_ADDR:
+              axi_bus.RDATA <= { {30{1'b0}}, pure_bt656, rx_enable };
+            RX_SIZE_STAT_ADDR:
+              axi_bus.RDATA <= rx_size_status_i;
+            RX_FRAME_CNTS_ADDR:
+              axi_bus.RDATA <= rx_frame_cnts_i;
             default:
               axi_bus.RDATA <= 32'hdeadbeef;
           endcase
@@ -91,6 +122,9 @@ module video_ctrl_axi #(
    assign tp_type_o   = tp_type_r;
    assign tp_width_o  = tp_width_r;
    assign tp_height_o = tp_height_r;
+
+   assign rx_enable_o   = rx_enable;
+   assign pure_bt656_o  = pure_bt656;
 
    // Example-specific design signals
    // local parameter for addressing 32 bit / 64 bit DW

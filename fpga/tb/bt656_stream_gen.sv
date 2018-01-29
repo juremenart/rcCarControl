@@ -10,9 +10,18 @@ typedef struct {
 // Simple BT.656 generator
 module bt656_stream_gen
   (
-   bt656_stream_if.s bt656_stream_o
+   input logic ACLK,
+   input logic ARESETn,
+
+   bt656_stream_if.s bt656_stream_o,
+
+   // some configuration
+   input logic pure_bt656_i
    );
 
+   // If pure_bt656_i == 0 the mimiced interface is from DVP of OV5642 sensor (without HSYNC)
+   // http://www.uctronics.com/download/cam_module/OV5642DS.pdf
+   // If pure_bt656_i == 1 then we do:
    // Change the values for V/HBlank here to produce:
    // These values taken from: http://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.656-5-200712-I!!PDF-E.pdf
    // But can be reduced for debugigng proposes
@@ -22,7 +31,7 @@ module bt656_stream_gen
    parameter num_pixels = 20; // number of pixels in line
    parameter num_lines = 16;
    const line_params_t line_params[7] = {
-                              //   SL,  EL,  F,  V
+                              //   SL,  EL,  F,  Vs
                                 {   1,   2,  0,  1 },
                                 {   3,   6,  0,  0 },
                                 {   7,   8,  0,  1 },
@@ -60,9 +69,9 @@ module bt656_stream_gen
 //                                { 624, 625,  1,  1 } };
 
    logic clk, rstn;
-   assign clk  = bt656_stream_o.ACLK;
+   assign clk  = ACLK;
    // TODO: take care of the proper reset if needed
-   assign rstn = bt656_stream_o.ARESETn;
+   assign rstn = ARESETn;
 
    // state machine signals
    enum logic [2:0]
@@ -172,22 +181,26 @@ module bt656_stream_gen
 
 
    logic       out_clk_en;
-   logic [7:0] out_data;
-   logic [7:0] hdr_data; // header data for EAV & SAV
+   logic [9:0] out_data;
+   logic [9:0] hdr_data; // header data for EAV & SAV
    logic       hdr_f, hdr_v, hdr_h; // header info of current lines
 
-   assign bt656_stream_o.LLC = (out_clk_en) ? bt656_stream.ACLK : 1'b0;
-   assign bt656_stream_o.DATA = out_data;
-   assign bt656_stream_o.HSYNC = hdr_h;
-   assign bt656_stream_o.VSYNC = hdr_v;
+   // for OV5642 (!pure_bt656_i generation)
+   logic       dvp_vsync, dvp_href;
+
+   assign bt656_stream_o.PCLK  = (out_clk_en) ? ACLK : 1'b0;
+   assign bt656_stream_o.DATA  = out_data;
+   assign bt656_stream_o.HSYNC = (pure_bt656_i == 1'b1) ? hdr_h : 1'b0;
+   assign bt656_stream_o.VSYNC = (pure_bt656_i == 1'b1) ? hdr_v : dvp_vsync;
+   assign bt656_stream_o.HREF  = (pure_bt656_i == 1'b1) ? 1'b0  : dvp_href;
 
    // Very simple frame formation :)
    always_ff @(posedge clk)
      if(!rstn)
        begin
           out_clk_en <= 1'b0;
-          out_data   <= 'b0;
-          hdr_data   <= 'b0;
+          out_data   <= '0;
+          hdr_data   <= '0;
           hdr_f <= 1'b0;
           hdr_v <= 1'b0;
           hdr_h <= 1'b0;
@@ -223,49 +236,62 @@ module bt656_stream_gen
             end
 
           out_clk_en <= 1'b1;
+          dvp_href   <= 1'b0;
+          dvp_vsync  <= 1'b0;
 
+          // TODO: Check if we should produce something else if !pure_bt656
           case(state)
             FSM_EAV:
               begin
+                 // We 'abuse' EAV stste - the VSYNC pulse is probably not the
+                 // right length but it should suffice for our TB I guess -
+                 //  otherwise complicate it and make it real :)
+                 if(line_num == 1'b1)
+                   dvp_vsync <= 1'b1;
+
                  case(pixel_num-1)
-                   0: out_data <= 8'hFF;
-                   1: out_data <= 8'h00;
-                   2: out_data <= 8'h00;
+                   0: out_data <= 10'h3FF;
+                   1: out_data <= 10'h000;
+                   2: out_data <= 10'h000;
                    3: out_data <= hdr_data;
-                   default: out_data <= 8'hDE; // should not happen
+                   default: out_data <= 10'h3DE; // should not happen
                  endcase; // case (pixel_num)
               end
             FSM_BLANKING:
               begin
                  if((pixel_num[0]-1) == 1'b0)
-                   out_data <= 8'h80;
+                   out_data <= 10'h080;
                  else
-                   out_data <= 8'h10;
+                   out_data <= 10'h010;
               end
             FSM_SAV:
               begin
                  case(pixel_num-1-4-num_hblank)
-                   0: out_data <= 8'hFF;
-                   1: out_data <= 8'h00;
-                   2: out_data <= 8'h00;
+                   0: out_data <= 10'h3FF;
+                   1: out_data <= 10'h00;
+                   2: out_data <= 10'h00;
                    3: out_data <= hdr_data;
-                   default: out_data <= 8'hDE; // should not happen
+                   default: out_data <= 10'h3DE; // should not happen
                  endcase; // case (pixel_num)
               end
             FSM_VDATA:
               begin
                  // TODO: Add real data here? If needed it should go here (be careful
                  // not to ignore vertical blanking
-                 logic [7:0] pixel_num_lsb=pixel_num-1-8-num_hblank;
+                 logic [9:0] pixel_num_lsb=pixel_num-1-8-num_hblank;
+
+                 if(hdr_v == 1'b0)
+                   dvp_href <= 1'b1;
+
                  case(pixel_num_lsb[1:0])
-                   0: out_data <= (hdr_v == 1'b1) ? 8'h80 : { hdr_f, 7'b1001011 }; // Cb
-                   1: out_data <= (hdr_v == 1'b1) ? 8'h10 : { pixel_num_lsb[7:0] }; //  Y0
-                   2: out_data <= (hdr_v == 1'b1) ? 8'h80 : { line_num[7:0] }; // Cr
-                   3: out_data <= (hdr_v == 1'b1) ? 8'h10 : { frame_num[7:0] }; //  Y1
+                   0: out_data <= (hdr_v == 1'b1) ? 10'h80 : { hdr_f, 9'b101001011 }; // Cb
+                   1: out_data <= (hdr_v == 1'b1) ? 10'h10 : { pixel_num_lsb[9:0] }; //  Y0
+                   2: out_data <= (hdr_v == 1'b1) ? 10'h80 : { line_num[9:0] }; // Cr
+                   3: out_data <= (hdr_v == 1'b1) ? 10'h10 : { frame_num[9:0] }; //  Y1
                    default: out_data <= 8'hDE; // should not happen
                  endcase; // case (pixel_num_lsb[1:0])
               end
           endcase; // case state
        end
-endmodule: bt656_stream_gen;
+endmodule: bt656_stream_gen
 

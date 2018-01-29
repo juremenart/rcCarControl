@@ -1,6 +1,6 @@
 interface bt656_stream_if
   #(
-    int unsigned DW = 8 // data width
+    int unsigned DW = 10 // data width
     )
    (
     );
@@ -15,18 +15,19 @@ interface bt656_stream_if
    parameter HDR_BIT_P1     = 1; // Bit1 - Protection bits - currently not used
    parameter HDR_BIT_P0     = 0; // Bit0 - Protection bits - currently not used
 
-   logic          LLC;      // line-locked clock
+   logic          PCLK;     // pixel clock, line-locked clock
    logic [DW-1:0] DATA;     // data
-   logic          HREF;     // horizontal ref - ignored with current implementation
+   logic          HREF;     // horizontal ref
    logic          HSYNC;    // horizontal sync - ignored with current implementation
-   logic          VSYNC;    // vertical sync - ignored with current implementation
+   logic          VSYNC;    // vertical sync
 
    // Using this chip: http://www.analog.com/media/en/technical-documentation/data-sheets/ADV7280.PDF
    // BT.656 recommendation:
    // http://www.itu.int/dms_pubrec/itu-r/rec/bt/R-REC-BT.656-5-200712-I!!PDF-E.pdf
+   // Was never tested with pure BT.656 but rather with OV5642 DVP
 
    modport s (
-              output LLC,
+              output PCLK,
               output DATA,
               output HREF,
               output HSYNC,
@@ -35,7 +36,7 @@ interface bt656_stream_if
 
    // drain
    modport d (
-              input LLC,
+              input PCLK,
               input DATA,
               input HREF,
               input HSYNC,
@@ -44,7 +45,7 @@ interface bt656_stream_if
 
    // monitor
    modport m (
-              input LLC,
+              input PCLK,
               input DATA,
               input HREF,
               input HSYNC,

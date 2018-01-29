@@ -1,11 +1,3 @@
-# My test output JA1.6, JA1.7, JA1.8
-set_property PACKAGE_PIN    D20         [get_ports {test1}]
-set_property IOSTANDARD     LVCMOS33    [get_ports {test1}]
-set_property PACKAGE_PIN    E19         [get_ports {test2}]
-set_property IOSTANDARD     LVCMOS33    [get_ports {test2}]
-set_property PACKAGE_PIN    D19         [get_ports {test3}]
-set_property IOSTANDARD     LVCMOS33    [get_ports {test3}]
-
 # Timing constraints
 # PCLK for BT 656 is 'nominal 27MHz' - check how to best define it
 # Define also full input parallel interface if needed

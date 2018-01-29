@@ -41,10 +41,7 @@ module bd_system_wrapper
    cam_href_i,
    cam_hsync_i,
    cam_vsync_i,
-   cam_data_i,
-   test1,
-   test2,
-   test3);
+   cam_data_i);
 
    inout [14:0]DDR_addr;
    inout [2:0] DDR_ba;
@@ -77,11 +74,7 @@ module bd_system_wrapper
    input        cam_href_i;
    input        cam_hsync_i;
    input        cam_vsync_i;
-   input [7:0]  cam_data_i;
-
-   output       test1;
-   output       test2;
-   output       test3;
+   input [9:0]  cam_data_i;
 
    wire [14:0]  DDR_addr;
    wire [2:0]   DDR_ba;
@@ -136,34 +129,11 @@ module bd_system_wrapper
    // cam_pclk_i goes to global clock buffer
    BUFG cam_clk_bufg(.I(cam_pclk_i), .O(cam_pclk_gclk));
 
-   assign bt656_input_video.LLC   = cam_pclk_gclk;
+   assign bt656_input_video.PCLK  = cam_pclk_gclk;
    assign bt656_input_video.HREF  = cam_href_i;
    assign bt656_input_video.HSYNC = cam_hsync_i;
    assign bt656_input_video.VSYNC = cam_vsync_i;
    assign bt656_input_video.DATA  = cam_data_i;
-
-   // DELETE Dummy count - only for bringup debugging
-   reg [15:0]   dummyCntFree;
-   reg [15:0]   dummyCnt;
-
-   assign test1 = 1'b1;
-   assign test2 = dummyCntFree[7];
-   assign test3 = dummyCnt[7];
-
-   always @(posedge FCLK_CLK0)
-     begin
-        dummyCntFree = dummyCntFree + 1;
-     end
-
-   always @(posedge FCLK_CLK0)
-     begin
-        if(FCLK_RESET0_N == 1'b0)
-          begin
-             dummyCnt = 16'h0;
-          end else begin
-             dummyCnt = dummyCnt + 1;
-          end
-     end
 
    sys_ctrl_top sys_ctrl_top_i
      (.axi_bus(axi_bus_sys_ctrl),

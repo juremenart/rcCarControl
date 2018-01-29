@@ -3,7 +3,8 @@
 module video_ctrl_tb
   #(
     // time periods
-    realtime               TP = 20.0ns // 50MHz
+    realtime TP = 20.0ns, // 50MHz
+    realtime V_TP = 41.667ns // 24MHz
     // RTL config
     );
 
@@ -15,10 +16,13 @@ module video_ctrl_tb
    logic                                    rstn;
    logic                                    s_clk;
    logic                                    s_rstn;
+   logic                                    b_clk;
+   logic                                    b_rstn;
 
-   logic                                    pwm0_pad, pwm1_pad;
-   logic                                    pwm0_rf, pwm1_rf, pwm0_sys, pwm1_sys;
+   logic                                    pure_bt656;
 
+   // to check either BT656 generation or OV DVP like interface
+   assign pure_bt656 = 1'b0;
 
    // Clock
    initial        clk = 1'b1;
@@ -28,17 +32,28 @@ module video_ctrl_tb
    initial        s_clk = 1'b1;
    always #(TP/4) s_clk = ~s_clk;
 
+   // BT656 PCLK
+   initial b_clk = 1'b1;
+   always #(V_TP/2) b_clk = ~b_clk;
+
    // Reset
    initial begin
       rstn = 1'b0;
-      repeat(4) @(posedge clk);
+      repeat(10) @(posedge clk);
       rstn = 1'b1;
+      repeat(20) @(posedge clk);
    end
 
    initial begin
       s_rstn = 1'b0;
-      repeat(8) @(posedge s_clk);
+      repeat(10) @(posedge s_clk);
       s_rstn = 1'b1;
+   end
+
+   initial begin
+      b_rstn = 1'b0;
+      repeat(10) @(posedge b_clk);
+      b_rstn = 1'b1;
    end
 
    ////////////////////////////////////////////////////////////////////////////////
@@ -48,18 +63,16 @@ module video_ctrl_tb
    logic [32-1:0] ver;
 
    initial begin
-      repeat(8) @(posedge clk);
+      repeat(20) @(posedge clk);
       video_stream.TREADY <= 1'b1;
       axi_read('h00, ver);
       $display("Video controller version = 0x%08x", ver);
       // set some small frame count and enable test pattern generator
       axi_write('h08, 32'h000a_0010); // 16x10 frame size
       repeat(2) @(posedge clk);
-      axi_write('h04, 32'h0000_0001); // Enable pattern generation
-      repeat(200) @(posedge clk);
-      video_stream.TREADY <= 1'b0;
-      repeat(12) @(posedge clk);
-      video_stream.TREADY <= 1'b1;
+      axi_write('h0C, { {30{1'b0}}, pure_bt656, 1'b1 }); // Enable receiver
+//      axi_write('h04, 32'h0000_0001); // Enable pattern generation
+      repeat(200000) @(posedge clk);
 
       // One more case to get it at EOL
 //      repeat(80) @(posedge clk);
@@ -67,18 +80,8 @@ module video_ctrl_tb
 //      repeat(10) @(posedge clk);
 //      video_stream.TREADY <= 1'b1;
 
-      repeat(93) @(posedge clk);
-      video_stream.TREADY <= 1'b0;
-      repeat(10) @(posedge clk);
-      video_stream.TREADY <= 1'b1;
-
       // check stuff on waveform (counters, frame generation, ..)
-      repeat(360) @(posedge clk);
-      axi_write('h04, 32'h0000_0000); // Disable pattern generation
-      axi_write('h08, 32'h0010_0020); // 32x16 frame size
-      repeat(2) @(posedge clk);
-      axi_write('h04, 32'h0000_0001); // Enable pattern generation
-      repeat(1000) @(posedge clk);
+      axi_write('h10, 32'h1000_0000); // Clear errors
       $finish();
    end
 
@@ -124,15 +127,23 @@ module video_ctrl_tb
    ////////////////////////////////////////////////////////////////////////////////
    axi4_lite_if axi4_lite (.ACLK (clk), .ARESETn (rstn));
    axi4_stream_if video_stream (.ACLK(s_clk), .ARESETn(s_rstn));
+   bt656_stream_if bt656_stream();
+
 
    axi4_lite_master bus_master (.intf (axi4_lite));
 
    video_ctrl_top video_ctrl_top_i
      (
       .axi_bus     (axi4_lite),
-      .axi_video_o (video_stream)
+      .axi_video_o (video_stream),
+      .bt656_video_i(bt656_stream)
       );
 
+   bt656_stream_gen bt656_stream_gen_i
+     (.ACLK(b_clk),
+      .ARESETn(b_rstn),
+      .bt656_stream_o(bt656_stream),
+      .pure_bt656_i(pure_bt656));
 
    ////////////////////////////////////////////////////////////////////////////////
    // waveforms

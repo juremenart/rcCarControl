@@ -19,6 +19,11 @@ module video_ctrl_top #(
    logic [1:0]  tp_type;
    logic [10:0] tp_width, tp_height;
 
+   logic        rx_enable, pure_bt656;
+   logic [31:0] rx_size_status;
+   logic [31:0] rx_frame_cnts;
+   logic        rx_rst_size_err;
+
    axi4_stream_if axi_tp_gen_video(.ACLK(FCLK_CLK1), .ARESETn(FCLK_RESET1_N));
    axi4_stream_if axi_bt656_video(.ACLK(FCLK_CLK1), .ARESETn(FCLK_RESET1_N));
 
@@ -30,7 +35,14 @@ module video_ctrl_top #(
       .tp_en_gen_o(tp_gen_en),
       .tp_type_o(tp_type),
       .tp_width_o(tp_width),
-      .tp_height_o(tp_height)
+      .tp_height_o(tp_height),
+
+      // Receiver / bt656_to_axi_stream configuration
+      .rx_enable_o(rx_enable),
+      .pure_bt656_o(pure_bt656),
+      .rx_size_status_i(rx_size_status),
+      .rx_rst_size_err_o(rx_rst_size_err),
+      .rx_frame_cnts_i(rx_frame_cnts)
       );
 
    // TODO: Be careful about reset for bt656_to_axi_stream!
@@ -41,7 +53,14 @@ module video_ctrl_top #(
 
       .axi_clk_i(axi_bus.ACLK),
       .axi_rstn_i(axi_bus.ARESETn),
-      .rx_enable_i(1'b1)
+      .rx_enable_i(rx_enable),
+      .pure_bt656_i(pure_bt656),
+      .ignore_href_i(1'b0),
+      .ignore_hsync_i(1'b1),
+      .ignore_vsync_i(1'b0),
+      .size_status_o(rx_size_status),
+      .rst_size_err_i(rx_rst_size_err),
+      .frame_cnts_o(rx_frame_cnts)
       );
 
    axi_stream_tp_gen axi_stream_tp_gen_i

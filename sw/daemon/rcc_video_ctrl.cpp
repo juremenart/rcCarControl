@@ -113,9 +113,9 @@ void rccVideoCtrl::dumpRegs(void)
 {
     uint32_t *addr = (uint32_t *)mRegs;
 
-    for(int i = 0; i < (int)sizeof(axiVideoCtrlRegs_t); i++)
+    for(int i = 0; i < (int)(sizeof(axiVideoCtrlRegs_t)>>2); i++)
     {
-        std::cout << "Offset=0x" << std::hex << i
+        std::cout << "Offset=0x" << std::hex << (i*4)
                   << " Value=0x" << *(addr+i) << std::endl;
     }
 

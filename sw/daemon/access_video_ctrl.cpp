@@ -37,7 +37,7 @@ int main(int argc, char *argv[])
     else if(argc == 3)
     {
         uint8_t regOffset = (uint8_t)strtod(argv[1], NULL);
-        uint32_t regValue = (uint32_t)strtod(argv[1], NULL);
+        uint32_t regValue = (uint32_t)strtod(argv[2], NULL);
 
         if(mVideoCtrl->writeReg(regOffset, regValue) < 0)
         {

@@ -181,8 +181,8 @@ module bt656_stream_gen
 
 
    logic       out_clk_en;
-   logic [9:0] out_data;
-   logic [9:0] hdr_data; // header data for EAV & SAV
+   logic [7:0] out_data;
+   logic [7:0] hdr_data; // header data for EAV & SAV
    logic       hdr_f, hdr_v, hdr_h; // header info of current lines
 
    // for OV5642 (!pure_bt656_i generation)
@@ -250,11 +250,11 @@ module bt656_stream_gen
                    dvp_vsync <= 1'b1;
 
                  case(pixel_num-1)
-                   0: out_data <= 10'h3FF;
-                   1: out_data <= 10'h000;
-                   2: out_data <= 10'h000;
+                   0: out_data <= 8'hFF;
+                   1: out_data <= 8'h00;
+                   2: out_data <= 8'h00;
                    3: out_data <= hdr_data;
-                   default: out_data <= 10'h3DE; // should not happen
+                   default: out_data <= 8'hDE; // should not happen
                  endcase; // case (pixel_num)
               end
             FSM_BLANKING:
@@ -267,11 +267,11 @@ module bt656_stream_gen
             FSM_SAV:
               begin
                  case(pixel_num-1-4-num_hblank)
-                   0: out_data <= 10'h3FF;
-                   1: out_data <= 10'h00;
-                   2: out_data <= 10'h00;
+                   0: out_data <= 8'hFF;
+                   1: out_data <= 8'h00;
+                   2: out_data <= 8'h00;
                    3: out_data <= hdr_data;
-                   default: out_data <= 10'h3DE; // should not happen
+                   default: out_data <= 8'hDE; // should not happen
                  endcase; // case (pixel_num)
               end
             FSM_VDATA:

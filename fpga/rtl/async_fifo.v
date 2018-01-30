@@ -19,16 +19,18 @@ module async_fifo
     FIFO_DEPTH    = (1 << ADDRESS_WIDTH))
    //Reading port
    (output reg  [DATA_WIDTH-1:0]        Data_out,
-    output reg                  Empty_out,
-    input wire                  ReadEn_in,
-    input wire                  RClk,
+    output reg                      Empty_out,
+    input wire                      ReadEn_in,
+    input wire                      RClk,
     //Writing port.
-    input wire [DATA_WIDTH-1:0] Data_in,
-    output reg                  Full_out,
-    input wire                  WriteEn_in,
-    input wire                  WClk,
+    input wire [DATA_WIDTH-1:0]     Data_in,
+    output reg                      Full_out,
+    input wire                      WriteEn_in,
+    input wire                      WClk,
 
-    input wire                  Clear_in);
+    input wire                      Clear_in,
+    output wire [ADDRESS_WIDTH-1:0] WrPtr_out,
+    output wire [ADDRESS_WIDTH-1:0] RdPtr_out);
 
    reg [DATA_WIDTH-1:0]         Mem [FIFO_DEPTH-1:0];
    wire [ADDRESS_WIDTH-1:0]     pNextWordToWrite, pNextWordToRead;
@@ -55,6 +57,11 @@ module async_fifo
    assign NextWriteAddressEn = WriteEn_in & ~Full_out;
    assign NextReadAddressEn  = ReadEn_in  & ~Empty_out;
 
+//   assign WrPtr_out = pNextWordToWrite;
+//   assign RdPtr_out = pNextWordToRead;
+
+   // Gray to binary conversion (if Gray is less then 32-bit wide it works)
+   assign WrPtr_out =
    //Addreses (Gray counters) logic:
    GrayCounter GrayCounter_pWr
      (.GrayCount_out(pNextWordToWrite),

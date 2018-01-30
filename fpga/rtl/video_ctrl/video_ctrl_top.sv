@@ -22,8 +22,10 @@ module video_ctrl_top #(
 
    rx_cfg_if    rx_cfg();
 
-   axi4_stream_if axi_tp_gen_video(.ACLK(FCLK_CLK1), .ARESETn(FCLK_RESET1_N));
-   axi4_stream_if axi_bt656_video(.ACLK(FCLK_CLK1), .ARESETn(FCLK_RESET1_N));
+   axi4_stream_if axi_tp_gen_video(.ACLK(axi_video_o.ACLK),
+                                   .ARESETn(axi_video_o.ARESETn));
+   axi4_stream_if axi_bt656_video(.ACLK(axi_video_o.ACLK),
+                                  .ARESETn(axi_video_o.ARESETn));
 
    // TODO: tp_* signals are not sync'd to stream clock!
    video_ctrl_axi #(.DW(DW), .AW(AW), .VER(VER)) video_ctrl_axi_i

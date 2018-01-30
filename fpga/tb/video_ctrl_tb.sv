@@ -69,6 +69,8 @@ module video_ctrl_tb
       $display("Video controller version = 0x%08x", ver);
       // set some small frame count and enable test pattern generator
       axi_write('h08, 32'h000a_0010); // 16x10 frame size
+      axi_write('h1C, 32'h0000_0020); // AXI FIFO write set to line * 2
+
       repeat(2) @(posedge clk);
       axi_write('h0C, { {30{1'b0}}, pure_bt656, 1'b1 }); // Enable receiver
 //      axi_write('h04, 32'h0000_0001); // Enable pattern generation

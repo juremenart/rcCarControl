@@ -19,6 +19,7 @@ private:
         uint32_t rxCtrl;      // 0x0C - R/W  - RX / Image Receiver Control
         uint32_t rxSizeStat;  // 0x10 -  RC  - RX / Image Receiver Size Status
         uint32_t rxFrameCnts; // 0x14 -  RO  - RX / Image Receiver Frame Counter
+        uint32_t rxFrameLen;  // 0x18 -  RO  - RX / Image Receiver Frame Length (can be used for framerate calculation)
     } axiVideoCtrlRegs_t;
 
 public:

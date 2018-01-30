@@ -16,13 +16,7 @@ module video_ctrl_axi #(
     output logic [10:0] tp_width_o,
     output logic [10:0] tp_height_o,
 
-    output logic        rx_enable_o,
-    output logic        pure_bt656_o,
-    input  logic [31:0] rx_size_status_i,
-    output logic        rx_rst_size_err_o,
-    input  logic [31:0] rx_frame_cnts_i,
-    output logic        cam_rstn_o,
-    output logic        cam_pwdn_o
+    rx_cfg_if.s rx_cfg
     );
 
    // Register map
@@ -32,6 +26,8 @@ module video_ctrl_axi #(
    localparam RX_CTRL_ADDR       = 6'h3; // R/W Receiver control register
    localparam RX_SIZE_STAT_ADDR  = 6'h4; // R/C  Size Status register
    localparam RX_FRAME_CNTS_ADDR = 6'h5; // RO  Frame counter (with AXI clock)
+   localparam RX_FRAME_LEN_ADDR  = 6'h6; // R/W Frame Length (with AXI clock)
+   localparam RX_FIFO_CTRL_ADDR  = 6'h7; // R/W RX FIFO Control
 
    //----------------------------------------------
    //-- Signals for user logic register space example
@@ -55,48 +51,59 @@ module video_ctrl_axi #(
    reg                     cam_rstn;
    reg                     cam_pwdn;
 
+   reg [10:0]              data_fifo_start_read;
+
    // Write registers
    always_ff @(posedge axi_bus.ACLK)
      if (axi_bus.ARESETn == 1'b0)
        begin
-          tp_en_gen_r <= 1'b0;
-          tp_type_r   <= 2'b00;
-          tp_width_r  <= 640;
-          tp_height_r <= 480;
-          rx_enable   <= 1'b0;
-          pure_bt656  <= 1'b0;
-          cam_rstn    <= 1'b1;
-          cam_pwdn    <= 1'b0;
+          tp_en_gen_r          <= 1'b0;
+          tp_type_r            <= 2'b00;
+          tp_width_r           <= 640;
+          tp_height_r          <= 480;
+          rx_enable            <= 1'b0;
+          pure_bt656           <= 1'b0;
+          cam_rstn             <= 1'b1;
+          cam_pwdn             <= 1'b0;
+          rx_cfg.rst_size_err    <= 1'b0;
+          data_fifo_start_read <= (640<<1);
        end
-     else if (slv_reg_wren)
+     else
        begin
-          rx_rst_size_err_o <= 1'b0;
-          case (axi_awaddr)
-            //VER_ADDR:
-              // version register - read only
-            TP_CTRL_ADDR:
-              begin
-                 tp_en_gen_r <= axi_bus.WDATA[0];
-                 tp_type_r   <= axi_bus.WDATA[5:4];
-              end
-            TP_SIZE_ADDR:
-              begin
-                 tp_width_r  <= axi_bus.WDATA[10:0];
-                 tp_height_r <= axi_bus.WDATA[26:16];
-              end
-            RX_CTRL_ADDR:
-              begin
-                 rx_enable   <= axi_bus.WDATA[0];
-                 pure_bt656  <= axi_bus.WDATA[1];
-                 cam_rstn    <= axi_bus.WDATA[2];
-                 cam_pwdn    <= axi_bus.WDATA[3];
-              end
-            RX_SIZE_STAT_ADDR:
-              begin
-                 rx_rst_size_err_o <= 1'b1;
-              end
-          endcase
-       end
+          rx_cfg.rst_size_err <= 1'b0;
+          if (slv_reg_wren)
+            begin
+               case (axi_awaddr)
+                 //VER_ADDR:
+                 // version register - read only
+                 TP_CTRL_ADDR:
+                   begin
+                      tp_en_gen_r <= axi_bus.WDATA[0] ;
+                      tp_type_r   <= axi_bus.WDATA[5:4];
+                   end
+                 TP_SIZE_ADDR:
+                   begin
+                      tp_width_r  <= axi_bus.WDATA[10:0];
+                      tp_height_r <= axi_bus.WDATA[26:16];
+                   end
+                 RX_CTRL_ADDR:
+                   begin
+                      rx_enable   <= axi_bus.WDATA[0];
+                      pure_bt656  <= axi_bus.WDATA[1];
+                      cam_rstn    <= axi_bus.WDATA[2];
+                      cam_pwdn    <= axi_bus.WDATA[3];
+                   end
+                 RX_SIZE_STAT_ADDR:
+                   begin
+                      rx_cfg.rst_size_err <= 1'b1;
+                   end
+                 RX_FIFO_CTRL_ADDR:
+                   begin
+                      data_fifo_start_read <= axi_bus.WDATA[10:0];
+                   end
+               endcase
+            end // if (slv_reg_wren)
+       end // else: !if(axi_bus.ARESETn == 1'b0)
 
    // Address decoding for reading registers
    // Output register or memory read data
@@ -115,27 +122,32 @@ module video_ctrl_axi #(
             RX_CTRL_ADDR:
               axi_bus.RDATA <= { {28{1'b0}}, cam_pwdn, cam_rstn, pure_bt656, rx_enable };
             RX_SIZE_STAT_ADDR:
-              axi_bus.RDATA <= rx_size_status_i;
+              axi_bus.RDATA <= rx_cfg.size_status;
             RX_FRAME_CNTS_ADDR:
-              axi_bus.RDATA <= rx_frame_cnts_i;
+              axi_bus.RDATA <= rx_cfg.frame_cnts;
+            RX_FRAME_LEN_ADDR:
+              axi_bus.RDATA <= rx_cfg.frame_length;
+            RX_FIFO_CTRL_ADDR:
+              axi_bus.RDATA <= { {22{1'b0}}, data_fifo_start_read };
             default:
               axi_bus.RDATA <= 32'hdeadbeef;
           endcase
        end
 
    // Assign outputs
-   // TODO: Add synchornization to target clock domain
    // Test Pattern outputs
    assign tp_en_gen_o = tp_en_gen_r;
    assign tp_type_o   = tp_type_r;
    assign tp_width_o  = tp_width_r;
    assign tp_height_o = tp_height_r;
 
-   assign rx_enable_o   = rx_enable;
-   assign pure_bt656_o  = pure_bt656;
+   assign rx_cfg.rx_enable   = rx_enable;
+   assign rx_cfg.pure_bt656  = pure_bt656;
 
-   assign cam_rstn_o    = cam_rstn;
-   assign cam_pwdn_o    = cam_pwdn;
+   assign rx_cfg.cam_rstn    = cam_rstn;
+   assign rx_cfg.cam_pwdn    = cam_pwdn;
+
+   assign rx_cfg.data_fifo_start = data_fifo_start_read;
 
    // Example-specific design signals
    // local parameter for addressing 32 bit / 64 bit DW

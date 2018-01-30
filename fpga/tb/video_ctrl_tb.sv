@@ -72,7 +72,7 @@ module video_ctrl_tb
       repeat(2) @(posedge clk);
       axi_write('h0C, { {30{1'b0}}, pure_bt656, 1'b1 }); // Enable receiver
 //      axi_write('h04, 32'h0000_0001); // Enable pattern generation
-      repeat(200000) @(posedge clk);
+      repeat(50000) @(posedge clk);
 
       // One more case to get it at EOL
 //      repeat(80) @(posedge clk);
@@ -82,6 +82,8 @@ module video_ctrl_tb
 
       // check stuff on waveform (counters, frame generation, ..)
       axi_write('h10, 32'h1000_0000); // Clear errors
+
+      repeat(50000) @(posedge clk);
       $finish();
    end
 

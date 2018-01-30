@@ -46,8 +46,8 @@ interface bt656_stream_if
               input HREF,
               input HSYNC,
               input VSYNC,
-              input RSTN,
-              input PWDN
+              output RSTN,
+              output PWDN
               );
 
    // monitor

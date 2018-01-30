@@ -13,24 +13,20 @@ module bt656_to_axi_stream
    input logic axi_clk_i,
    input logic axi_rstn_i,
 
-   input logic rx_enable_i,
-   input logic pure_bt656_i, // 'pure' is probably not correct name - this means use header from data to control the stream and ignore all control signals
-   input logic ignore_href_i,
-   input logic ignore_hsync_i,
-   input logic ignore_vsync_i,
-
-   output logic [31:0] size_status_o,
-   input logic         rst_size_err_i,
-   output logic [31:0] frame_cnts_o);
+   rx_cfg_if.d  rx_cfg
+   );
 
    logic              clk;
    logic              rstn;
+
+   assign bt656_stream_i.RSTN = rx_cfg.cam_rstn;
+   assign bt656_stream_i.PWDN = rx_cfg.cam_pwdn;
 
    // TODO: Should we have internal clock of the same speed as external for this
    // or would it be unnecessary complication? Be sure to connect external clock
    // to pin connected to clock network - this should do the trick
    assign clk  = bt656_stream_i.PCLK;
-   assign rstn = rx_enable_i;
+   assign rstn = rx_cfg.rx_enable;
 
    // state machine signals
    enum logic [2:0]
@@ -58,8 +54,8 @@ module bt656_to_axi_stream
    logic         latch_pixel_cnt;
 
    assign rst_line_cnt = in_new_frame;
-   assign inc_line_cnt = (!pure_bt656_i && !in_hblank && bt656_stream_i.HREF) ||
-                         (pure_bt656_i && sav_det);
+   assign inc_line_cnt = (!rx_cfg.pure_bt656 && !in_hblank && bt656_stream_i.HREF) ||
+                         (rx_cfg.pure_bt656 && sav_det);
 
    always_ff @(posedge clk)
      if(!rstn)
@@ -68,7 +64,7 @@ module bt656_to_axi_stream
        end
      else
        begin
-          if(!rx_enable_i)
+          if(!rx_cfg.rx_enable)
             state <= FSM_IDLE;
           else
             state <= nstate;
@@ -84,9 +80,9 @@ module bt656_to_axi_stream
             begin
                // Wait for start of new frame (ignore all other headers)
                // When new frame is detected wait for SAV
-               if(in_new_frame && pure_bt656_i)
+               if(in_new_frame && rx_cfg.pure_bt656)
                  nstate = FSM_SAV;
-               else if(in_new_frame && !pure_bt656_i)
+               else if(in_new_frame && !rx_cfg.pure_bt656)
                  nstate = FSM_BLANKING;
             end
           FSM_SAV:
@@ -100,7 +96,7 @@ module bt656_to_axi_stream
             begin
                // Active data only here
                rst_pixel_cnt = 1'b0;
-               if(pure_bt656_i)
+               if(rx_cfg.pure_bt656)
                  begin
                     if(eav_det_d)
                       begin
@@ -110,7 +106,7 @@ module bt656_to_axi_stream
                  end
                else
                  begin
-                    if(!bt656_stream_i.HREF && !ignore_href_i)
+                    if(!bt656_stream_i.HREF)
                       begin
                          latch_pixel_cnt <= 1'b1;
                          nstate = FSM_BLANKING;
@@ -119,7 +115,7 @@ module bt656_to_axi_stream
             end
           FSM_BLANKING:
             begin
-               if(pure_bt656_i)
+               if(rx_cfg.pure_bt656)
                  begin
                     if(sav_det_d && !in_vblank)
                       nstate = FSM_VDATA;
@@ -128,7 +124,7 @@ module bt656_to_axi_stream
                  end
                else
                  begin
-                    if(bt656_stream_i.HREF && !ignore_href_i)
+                    if(bt656_stream_i.HREF)
                       begin
                          nstate = FSM_VDATA;
                       end
@@ -159,7 +155,7 @@ module bt656_to_axi_stream
 
    // Input line/field/frame detection
    // Do header/SAV/EAV detection only if configured for 'pure bt656'
-   assign hdr_det = pure_bt656_i &&
+   assign hdr_det = rx_cfg.pure_bt656 &&
                     (in_data[input_data_ffs-1] == 8'hFF) &&
                     (in_data[input_data_ffs-2] == 8'h00) &&
                     (in_data[input_data_ffs-3] == 8'h00) &&
@@ -171,8 +167,9 @@ module bt656_to_axi_stream
 
    // for VSYNC frame detection we invert the polarity - it wouldn't be necessary though
    assign in_new_frame
-     = ((in_vsync_field_d && !in_vsync_field) && pure_bt656_i) ||
-       ((!in_vsync_field_d && in_vsync_field && in_vsync_valid) && !pure_bt656_i && !ignore_vsync_i);
+     = ((in_vsync_field_d && !in_vsync_field) && rx_cfg.pure_bt656) ||
+       ((!in_vsync_field_d && in_vsync_field && in_vsync_valid) &&
+        !rx_cfg.pure_bt656);
 
    always_ff @(posedge clk)
      if(!rstn)
@@ -191,7 +188,7 @@ module bt656_to_axi_stream
      else
        begin
           in_vsync_field_d <= in_vsync_field;
-          if(pure_bt656_i)
+          if(rx_cfg.pure_bt656)
             begin
                // in FSM we use [eav|sav]_det_d (delayed) so we always have also
                // registered values of in_hblank/in_vblank/in_vsync_field
@@ -206,27 +203,24 @@ module bt656_to_axi_stream
                     in_vsync_field
                       <= in_data[input_data_ffs-4][bt656_stream_i.HDR_BIT_FIELD];
                  end
-            end // if (pure_bt656_i)
+            end // if (rx_cfg.pure_bt656)
           else
             begin
                if(bt656_stream_i.VSYNC == 1'b0)
                  in_vsync_valid = 1'b1;
                in_vsync_field <= bt656_stream_i.VSYNC;
                in_hblank      <= bt656_stream_i.HREF;
-            end // else: !if(pure_bt656_i)
+            end // else: !if(rx_cfg.pure_bt656)
        end // else: !if(!rstn)
 
    // Data packing and putting to FIFO
    // We receive:
    // Cb0 Y0 Cr0 Y1 and we must create two output data packets:
    // Cb0Cr0Y0 and Cb0Cr0Y1
-   logic [7:0] cb, cr, y0;
    logic [11:0] pixel_cnt;
    logic [11:0] line_cnt;
-   logic [31:0] packed_data [1:0];
    logic [11:0] width_cnt, height_cnt;
 
-   // TODO: Add clear possibility for clear these flags
    logic        width_err, height_err;
 
    logic        fifo_full;
@@ -234,14 +228,24 @@ module bt656_to_axi_stream
    logic [31:0] size_fifo_data;
    logic        sync_rst_size_err;
 
-   assign size_fifo_data = { width_err, {3{1'b0}}, width_cnt,
-                             height_err, {3{1'b0}}, height_cnt };
+   // Write DATA FIFO signals
+   // See data_fifo_i instantiation and READ signals below
+
+   logic        data_fifo_write;
+   logic        data_fifo_full;
+
+
+   // Size FIFO (only status)
+   assign size_fifo_data = { height_err, {3{1'b0}}, height_cnt,
+                             width_err, {3{1'b0}}, width_cnt };
+
+   assign data_fifo_write = (state == FSM_VDATA) && !data_fifo_full;
 
    sync_pulse sync_rst_size_err_i
-     (.rstn_i(rx_enable_i),
+     (.rstn_i(rx_cfg.rx_enable),
 
       .a_clk_i(axi_clk_i),
-      .a_pulse_i(rst_size_err_i),
+      .a_pulse_i(rx_cfg.rst_size_err),
 
       .b_clk_i(clk),
       .b_pulse_o(sync_rst_size_err));
@@ -249,18 +253,13 @@ module bt656_to_axi_stream
    always_ff @(posedge clk)
      if(!rstn)
        begin
-          pixel_cnt <= '0;
-          cb <= '0;
-          cr <= '0;
-          y0 <= '0;
-          packed_data[0] <= '0;
-          packed_data[1] <= '0;
-          width_cnt  <= '1;
-          height_cnt <= '1;
-          width_err <= '0;
-          height_err <= '0;
-          line_cnt <= '0;
-          fifo_write <= 1'b0;
+          pixel_cnt       <= '0;
+          width_cnt       <= '1;
+          height_cnt      <= '1;
+          width_err       <= '0;
+          height_err      <= '0;
+          line_cnt        <= '0;
+          fifo_write      <= 1'b0;
        end
      else
        begin
@@ -298,33 +297,33 @@ module bt656_to_axi_stream
 
           // TODO: Change this code - no need to pack now - we send out the same YCbCr 4:2:2 as
           // we received (at least currently) - so we simply push to FIFO received data
-          if((state == FSM_VDATA) && (!eav_det_d && pure_bt656_i))
-            begin
-               case(pixel_cnt[1:0])
-                 2'b00: // Cb
-                   cb <= in_data[1];
-                 2'b01: // Y0
-                   y0 <= in_data[1];
-                 2'b10:
-                   cr <= in_data[1];
-                 2'b11:
-                   begin
-                      // TODO: Push to FIFO
-                      packed_data[0] <= { cb, cr, y0 };
-                      packed_data[1] <= { cb, cr, in_data[1] };
-                   end
-               endcase; // case (pixel_cnt)
-            end
+//          if(state == FSM_VDATA)
+//            begin
+//               case(pixel_cnt[1:0])
+//                 2'b00: // Cb
+//                   cb <= in_data[1];
+//                 2'b01: // Y0
+//                   y0 <= in_data[1];
+//                 2'b10:
+//                   cr <= in_data[1];
+//                 2'b11:
+//                   begin
+//                      // TODO: Push to FIFO
+//                      packed_data[0] <= { cb, cr, y0 };
+//                      packed_data[1] <= { cb, cr, in_data[1] };
+//                   end
+//               endcase; // case (pixel_cnt)
+//            end
        end // else: !if(!rstn)
 
    // AXI clock domain
 
    // Length of frame with AXI clock
-   logic [31:0] frame_cnts;
+   logic [31:0] frame_length;
    logic        sync_in_new_frame;
 
    sync_pulse sync_new_frame_i
-     (.rstn_i(rx_enable_i),
+     (.rstn_i(rx_cfg.rx_enable),
 
       // input
       .a_clk_i(clk),
@@ -337,20 +336,22 @@ module bt656_to_axi_stream
    always_ff @(posedge axi_clk_i)
      if(!axi_rstn_i)
        begin
-          frame_cnts      <= '0;
-          frame_cnts_o    <= '0;
+          frame_length      <= '0;
+          rx_cfg.frame_length    <= '0;
+          rx_cfg.frame_cnts      <= '0;
        end
      else
        begin
-          if(rx_enable_i)
+          if(rx_cfg.rx_enable)
             begin
                if(sync_in_new_frame)
                  begin
-                    frame_cnts_o <= frame_cnts;
-                    frame_cnts   <= '0;
+                    rx_cfg.frame_cnts   <= rx_cfg.frame_cnts + 1;
+                    rx_cfg.frame_length <= frame_length;
+                    frame_length   <= '0;
                  end
                else
-                 frame_cnts <= frame_cnts + 1;
+                 frame_length <= frame_length + 1;
             end
        end // else: !if(!axi_rstn_i)
 
@@ -362,9 +363,10 @@ module bt656_to_axi_stream
 
    assign read_fifo = !read_empty;
 
+   // Size status FIFO (status only)
    async_fifo #(.DATA_WIDTH(32), .ADDRESS_WIDTH(1)) size_status_fifo_i
    (// Reading - AXI4-Lite part
-    .Data_out(size_status_o),
+    .Data_out(rx_cfg.size_status),
     .Empty_out(read_empty),
     .ReadEn_in(read_fifo),
     .RClk(axi_clk_i),
@@ -376,6 +378,29 @@ module bt656_to_axi_stream
     .WClk(clk),
 
     // TODO: Probably not the best to use this async signal?
-    .Clear_in(!rx_enable_i));
+    .Clear_in(!rx_cfg.rx_enable));
+
+   // DATA FIFO
+   // Current size is 8 x 2048 (should be more then comfortable for 720p - 1280x720
+   // resoltuion to store ~1.5 lines)
+   // Remember each pixel is actually 16 bit, so two entries
+   logic        data_fifo_empty, data_fifo_read;
+   logic [7:0]  data_fifo_data;
+
+   async_fifo #(.DATA_WIDTH(8), .ADDRESS_WIDTH(11)) data_fifo_i
+     ( // Read part - fast AXI Stream running @ 100MHz
+      .Data_out(data_fifo_data),
+      .Empty_out(data_fifo_empty),
+      .ReadEn_in(data_fifo_read),
+      .RClk(axi_stream_o.ACLK),
+
+       // Write part - slow input video @ 24 MHz
+       .Data_in(in_data[1]),
+       .Full_out(data_fifo_full),
+       .WriteEn_in(data_fifo_write),
+       .WClk(clk),
+
+       .Clear_in(!rstn));
+
 
 endmodule: bt656_to_axi_stream

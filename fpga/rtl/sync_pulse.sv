@@ -55,7 +55,6 @@ module sync_pulse
    always_ff @(posedge b_clk_i)
      if(!rstn_i)
        begin
-          b_sync    <= '0;
           b_pulse_o <= 'b0;
        end
      else

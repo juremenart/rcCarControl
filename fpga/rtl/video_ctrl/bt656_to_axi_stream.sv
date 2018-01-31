@@ -343,7 +343,8 @@ module bt656_to_axi_stream
    assign read_fifo = !read_empty;
 
    // Size status FIFO (status only)
-   async_fifo #(.DATA_WIDTH(32), .ADDRESS_WIDTH(1)) size_status_fifo_i
+   // TODO: Change this FIFO with normal sync of this (we don't need FIFO really)
+   async_fifo #(.DATA_WIDTH(32), .ADDRESS_WIDTH(2)) size_status_fifo_i
    (// Reading - AXI4-Lite part
     .Data_out(rx_cfg.size_status),
     .Empty_out(read_empty),

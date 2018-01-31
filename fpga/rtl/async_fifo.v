@@ -115,7 +115,7 @@ module async_fifo
        Empty_out <= 0;
 
    // TODO: This is dangerous as hell - sync addresses before using them?
-   always @ (posedge RClk, Clear_in)
+   always @ (posedge RClk)
      if(Clear_in)
        begin
           SyncWritePtrGray <= {ADDRESS_WIDTH{1'b0}};

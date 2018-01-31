@@ -469,17 +469,6 @@ module bt656_to_axi_stream
           else
             axi_state <= axi_nstate;
 
-//          if(data_fifo_read)
-//            begin
-//               fifo_pixel_cnt_eol <= 1'b0;
-//               if(fifo_pixel_cnt == (rx_cfg.data_fifo_line_len-1))
-//                 begin
-//                    fifo_pixel_cnt <= '0;
-//                    fifo_pixel_cnt_eol <= 1'b1;
-//                 end
-//               else if(data_fifo_read_d)
-//                 fifo_pixel_cnt <= fifo_pixel_cnt + 1;
-//            end
           if(rst_fifo_pixel_cnt)
             begin
                fifo_pixel_cnt <= '0;

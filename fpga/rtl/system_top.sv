@@ -117,6 +117,8 @@ module bd_system_wrapper
 
    wire         cam_pclk_gclk;
 
+   parameter int AXI_STREAM_DW = 8;
+
    // AXI4-Lite buses
    // SYS_CTRL physical address: 0x43C0_0000
    axi4_lite_if axi_bus_sys_ctrl(.ACLK(FCLK_CLK0), .ARESETn(FCLK_RESET0_N));
@@ -125,7 +127,7 @@ module bd_system_wrapper
 
    // Input to axi_vdma_0
    // AXI4-Lite VDMA physical address: 0x4300_0000
-   axi4_stream_if axi_str_video(.ACLK(FCLK_CLK1), .ARESETn(FCLK_RESET1_N));
+   axi4_stream_if #(.DW(AXI_STREAM_DW)) axi_str_video(.ACLK(FCLK_CLK1), .ARESETn(FCLK_RESET1_N));
 
    // Input of BT 656 stream (YCbCr 4:2:2, but also RGB should be supported)
    bt656_stream_if bt656_input_video();

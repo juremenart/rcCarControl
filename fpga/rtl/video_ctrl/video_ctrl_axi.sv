@@ -52,6 +52,7 @@ module video_ctrl_axi #(
    reg                     cam_pwdn;
 
    reg [10:0]              data_fifo_start_read;
+   reg [10:0]              data_fifo_line_len;
 
    // Write registers
    always_ff @(posedge axi_bus.ACLK)
@@ -65,8 +66,9 @@ module video_ctrl_axi #(
           pure_bt656           <= 1'b0;
           cam_rstn             <= 1'b1;
           cam_pwdn             <= 1'b0;
-          rx_cfg.rst_size_err    <= 1'b0;
+          rx_cfg.rst_size_err  <= 1'b0;
           data_fifo_start_read <= (640<<1);
+          data_fifo_line_len   <= (640<<1);
        end
      else
        begin
@@ -100,6 +102,7 @@ module video_ctrl_axi #(
                  RX_FIFO_CTRL_ADDR:
                    begin
                       data_fifo_start_read <= axi_bus.WDATA[10:0];
+                      data_fifo_line_len   <= axi_bus.WDATA[26:16];
                    end
                endcase
             end // if (slv_reg_wren)
@@ -128,7 +131,8 @@ module video_ctrl_axi #(
             RX_FRAME_LEN_ADDR:
               axi_bus.RDATA <= rx_cfg.frame_length;
             RX_FIFO_CTRL_ADDR:
-              axi_bus.RDATA <= { {22{1'b0}}, data_fifo_start_read };
+              axi_bus.RDATA <= { {5{1'b0}}, data_fifo_line_len,
+                                 {5{1'b0}}, data_fifo_start_read };
             default:
               axi_bus.RDATA <= 32'hdeadbeef;
           endcase
@@ -147,7 +151,8 @@ module video_ctrl_axi #(
    assign rx_cfg.cam_rstn    = cam_rstn;
    assign rx_cfg.cam_pwdn    = cam_pwdn;
 
-   assign rx_cfg.data_fifo_start = data_fifo_start_read;
+   assign rx_cfg.data_fifo_start    = data_fifo_start_read;
+   assign rx_cfg.data_fifo_line_len = data_fifo_line_len;
 
    // Example-specific design signals
    // local parameter for addressing 32 bit / 64 bit DW

@@ -13,6 +13,7 @@ interface rx_cfg_if
    logic        cam_pwdn;
    logic        cam_rstn;
    logic [10:0] data_fifo_start;
+   logic [10:0] data_fifo_line_len;
 
    // Source
    modport s (
@@ -24,7 +25,8 @@ interface rx_cfg_if
               input  frame_length,
               output cam_pwdn,
               output cam_rstn,
-              output data_fifo_start
+              output data_fifo_start,
+              output data_fifo_line_len
               );
 
    // drain
@@ -37,7 +39,8 @@ interface rx_cfg_if
               output frame_length,
               input  cam_pwdn,
               input  cam_rstn,
-              input  data_fifo_start
+              input  data_fifo_start,
+              input  data_fifo_line_len
               );
 
 
@@ -51,7 +54,8 @@ interface rx_cfg_if
               input  frame_length,
               input  cam_pwdn,
               input  cam_rstn,
-              input  data_fifo_start
+              input  data_fifo_start,
+              input  data_fifo_line_len
               );
 
 

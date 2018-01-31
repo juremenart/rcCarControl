@@ -29,8 +29,7 @@ module async_fifo
     input wire                      WClk,
 
     input wire                      Clear_in,
-    output wire [ADDRESS_WIDTH-1:0] WrPtr_out,
-    output wire [ADDRESS_WIDTH-1:0] RdPtr_out);
+    output reg [ADDRESS_WIDTH-1:0]  Read_WordCount_out);
 
    reg [DATA_WIDTH-1:0]         Mem [FIFO_DEPTH-1:0];
    wire [ADDRESS_WIDTH-1:0]     pNextWordToWrite, pNextWordToRead;
@@ -39,6 +38,11 @@ module async_fifo
    wire                         Set_Status, Rst_Status;
    reg                          Status;
    wire                         PresetFull, PresetEmpty;
+
+   // SyncWritePtrBin means WritePtrBin sync'd to Read clock domain
+   wire [ADDRESS_WIDTH-1:0]      ReadPtrBin;
+   wire [ADDRESS_WIDTH-1:0]      SyncWritePtrBin;
+   reg [ADDRESS_WIDTH-1:0]       SyncWritePtrGray, ReadPtrGray; // we sync graycounter to read domain and convert
 
    //  41     //Data ports logic:
      //(Uses a dual-port RAM).
@@ -57,26 +61,23 @@ module async_fifo
    assign NextWriteAddressEn = WriteEn_in & ~Full_out;
    assign NextReadAddressEn  = ReadEn_in  & ~Empty_out;
 
-//   assign WrPtr_out = pNextWordToWrite;
-//   assign RdPtr_out = pNextWordToRead;
-
-   // Gray to binary conversion (if Gray is less then 32-bit wide it works)
-   assign WrPtr_out =
    //Addreses (Gray counters) logic:
-   GrayCounter GrayCounter_pWr
+   GrayCounter #(.COUNTER_WIDTH(ADDRESS_WIDTH)) GrayCounter_pWr
      (.GrayCount_out(pNextWordToWrite),
 
       .Enable_in(NextWriteAddressEn),
       .Clear_in(Clear_in),
 
-      .Clk(WClk)
+      .Clk(WClk),
+      .BinaryCount() // we use gray counter for writting and sync it to Read domain
       );
 
-   GrayCounter GrayCounter_pRd
+   GrayCounter #(.COUNTER_WIDTH(ADDRESS_WIDTH)) GrayCounter_pRd
      (.GrayCount_out(pNextWordToRead),
       .Enable_in(NextReadAddressEn),
       .Clear_in(Clear_in),
-      .Clk(RClk)
+      .Clk(RClk),
+      .BinaryCount()
       );
 
 
@@ -113,6 +114,30 @@ module async_fifo
      else
        Empty_out <= 0;
 
+   // TODO: This is dangerous as hell - sync addresses before using them?
+   always @ (posedge RClk, Clear_in)
+     if(Clear_in)
+       begin
+          SyncWritePtrGray <= {ADDRESS_WIDTH{1'b0}};
+          Read_WordCount_out <= {ADDRESS_WIDTH{1'b0}};
+          ReadPtrGray <= {ADDRESS_WIDTH{1'b0}};
+       end
+     else
+       begin
+          SyncWritePtrGray <= pNextWordToWrite;
+          ReadPtrGray      <= pNextWordToRead;
+          Read_WordCount_out <= SyncWritePtrBin - ReadPtrBin;
+       end
+
+   GrayToBin #(.NB(ADDRESS_WIDTH)) GrayToBin_wrptr
+     (.gray_in(SyncWritePtrGray),
+      .bin_out(SyncWritePtrBin));
+
+   GrayToBin #(.NB(ADDRESS_WIDTH)) GrayToBin_rdptr
+     (.gray_in(ReadPtrGray),
+      .bin_out(ReadPtrBin));
+
+
 endmodule
 
 module GrayCounter
@@ -121,9 +146,10 @@ module GrayCounter
    (output reg  [COUNTER_WIDTH-1:0]    GrayCount_out,  //'Gray' code count output.
     input wire Enable_in, //Count enable.
     input wire Clear_in, //Count reset.
+    output reg [COUNTER_WIDTH-1:0]     BinaryCount,
 
     input wire Clk);
-   reg [COUNTER_WIDTH-1:0] BinaryCount;
+//   reg [COUNTER_WIDTH-1:0] BinaryCount;
 
    always @ (posedge Clk)
      if (Clear_in) begin
@@ -136,4 +162,23 @@ module GrayCounter
                           BinaryCount[COUNTER_WIDTH-2:0] ^ BinaryCount[COUNTER_WIDTH-1:1]};
      end
 
-endmodule
+endmodule // GrayCounter
+
+module GrayToBin
+  #(parameter NB=11)
+   (
+    input wire [NB-1:0] gray_in,
+    output wire [NB-1:0] bin_out
+    );
+
+   genvar                i;
+   assign bin_out[NB-1] = gray_in[NB-1];
+   generate
+      for(i=NB-2; i >= 0; i=i-1)
+        begin : bin_out_gen
+           assign bin_out[i] = gray_in[i] ^ bin_out[i+1];
+        end
+   endgenerate
+
+endmodule // GrayToBin
+

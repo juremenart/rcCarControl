@@ -10,7 +10,7 @@ extern "C" {
 class rccVideoCtrl {
 private:
     const uint32_t cVideoCtrlAddr   = 0x43C10000;
-    const uint32_t cAxiClock      = 50e6;       // 50 [MHz]
+    const uint32_t cAxiClock        = 50e6;       // 50 [MHz]
 
     typedef struct axiVideoCtrlRegs_s {
         uint32_t version;     // 0x00 -  RO  - Version register
@@ -30,9 +30,9 @@ public:
 
     int version(void);
 
-    int writeReg(uint8_t regOffset, uint32_t regValue);
+    int      writeReg(uint8_t regOffset, uint32_t regValue);
     uint32_t readReg(uint8_t regOffset);
-    void dumpRegs(void);
+    void     dumpRegs(void);
 
 private:
     int      cleanup(void);

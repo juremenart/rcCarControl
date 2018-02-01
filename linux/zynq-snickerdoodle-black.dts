@@ -58,6 +58,11 @@
                 enable-active-high;
         };
 
+        xrcc_cam_0 : xrcc_cam@0 {
+                compatible = "xlnx,rcc-cam-1.0";
+                dmas = <&axi_vdma_0 1>;
+                dma-names = "axivdma0";
+        };
         amba {
                axi_vdma_0: axivdma@43000000 {
                         #dma-cells = <1>;

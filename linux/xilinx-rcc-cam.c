@@ -15,64 +15,81 @@
 #include <linux/wait.h>
 #include <linux/dma/xilinx_dma.h>
 
-typedef struct xrcc_vdma_chan_s {
-    struct dma_chan *chan;
-    struct list_head list;
-} xrcc_vdma_chan_t;
+typedef struct xrcc_cam_dev_s {
+    uint32_t           frm_cnt; // number of frame buffers
+    uint32_t           width, height;
 
-xrcc_vdma_chan_t xrcc_vdma_channels;
+    struct dma_chan   *dma_chan;
+    struct device     *dev;
 
-struct platform_device *xrcc_vdma_dev = NULL;
+} xrcc_cam_dev_t;
 
-static int xrcc_cam_add_channel(struct dma_chan *chan)
+static struct device *xrcc_dev_to_dev(xrcc_cam_dev_t *dev)
 {
-    xrcc_vdma_chan_t *new_chan;
+    return dev->dev;
+}
 
-    dev_info(&xrcc_vdma_dev->dev,
-             "xrcc_cam_add_channel() adding: %s", dma_chan_name(chan));
+static int xrcc_cam_add_channel(struct dma_chan *chan,
+                                xrcc_cam_dev_t *dev)
+{
+    dev->dma_chan = chan;
 
-    new_chan = kmalloc(sizeof(xrcc_vdma_chan_t), GFP_KERNEL);
-    if(!new_chan)
-    {
-        return -ENOMEM;
-    }
-
-    new_chan->chan = chan;
-    dev_info(&xrcc_vdma_dev->dev, "new xrcc_vdma_chan_t structure initialized");
-
-    INIT_LIST_HEAD(&new_chan->list);
-
-    dev_info(&xrcc_vdma_dev->dev, "new xrcc_vdma_chan_t list head initialized, adding it to structure");
-    list_add_tail(&(new_chan->list), &(xrcc_vdma_channels.list));
-
-    dev_info(&xrcc_vdma_dev->dev, "new xrcc_vdma_chan_t added successfully");
+    dev_info(xrcc_dev_to_dev(dev), "Adding DMA channel: %s",
+             dma_chan_name(chan));
     return 0;
 }
 
 static int xrcc_cam_probe(struct platform_device *pdev)
 {
+    xrcc_cam_dev_t *xrcc_dev;
+
     struct dma_chan *rx_chan;
     int err;
+    uint32_t frm_cnt = 3; // TODO: Get that info from rx_chan!
 
-    INIT_LIST_HEAD(&xrcc_vdma_channels.list);
+    dev_info(&pdev->dev, "Probe entry");
 
-    xrcc_vdma_dev = pdev;
-
-    dev_info(&pdev->dev, "LIST_HEAD called, let's add new channel");
-    rx_chan = dma_request_slave_channel(&pdev->dev, "axivdma0");
-    if (IS_ERR(rx_chan)) {
+    // TODO: We are requesting axivdma1 (we define 2 in DTS eventhough
+    // in HW we had only one connected. This should be fixed but when I
+    // tried it I had problems and reverted to original DTS settings to
+    // at least be able to request rx_chan successfully.
+    rx_chan = dma_request_chan(&pdev->dev, "axivdma1");
+    if (IS_ERR(rx_chan) || (rx_chan == NULL)) {
         err = PTR_ERR(rx_chan);
-        pr_err("xilinx_dmatest: No Rx channel\n");
+        dev_err(&pdev->dev, "RX DMA channel not found, check dma-names in DT");
         return err;
     }
 
-    err = xrcc_cam_add_channel(rx_chan);
+    // Create internal structure
+    xrcc_dev = devm_kzalloc(&pdev->dev, sizeof(xrcc_cam_dev_t), GFP_ATOMIC);
+    if(xrcc_dev == NULL)
+    {
+        dev_err(&pdev->dev, "Can not allocate memory for private structure");
+        return -ENOMEM;
+    }
+
+    xrcc_dev->dev = &pdev->dev;
+    dev_set_drvdata(&pdev->dev, xrcc_dev);
+
+    // TODO: Get the number of buffers from DMA driver 'somehow'
+//    dev_info(&pdev->dev, "Reading num-fstores");
+//    err = of_property_read_u32(rx_chan->dev->device.of_node,
+//                               "xlnx,num-fstores", &frm_cnt);
+//    if(err < 0)
+//    {
+//        dev_err(&pdev->dev, "Number of frame buffers not found, check num-fstores in DT");
+//        return err;
+//    }
+
+    xrcc_dev->frm_cnt = frm_cnt;
+
+    err = xrcc_cam_add_channel(rx_chan, xrcc_dev);
     if (err) {
-        pr_err("xilinx_dmatest: Unable to add channels\n");
+        dev_err(&pdev->dev, "Unable to add channels\n");
         goto free_rx;
     }
 
-    dev_info(&pdev->dev, "RCC Camera Driver Probed");
+    dev_info(xrcc_dev_to_dev(xrcc_dev), "RCC Camera Driver Probed");
 
     return 0;
 
@@ -84,16 +101,20 @@ free_rx:
 
 static int xrcc_cam_remove(struct platform_device *pdev)
 {
-    xrcc_vdma_chan_t *vdma_chan;
+    xrcc_cam_dev_t *xrcc_dev = dev_get_drvdata(&pdev->dev);
 
-    list_for_each_entry(vdma_chan, &xrcc_vdma_channels.list, list) {
-        list_del(&vdma_chan->list);
-        dev_info(&xrcc_vdma_dev->dev, "xrcc_cam: Releasing channel %s\n",
-                dma_chan_name(vdma_chan->chan));
-        dma_release_channel(vdma_chan->chan);
-
-        kfree(vdma_chan);
+    if(xrcc_dev->dma_chan)
+    {
+        dev_info(xrcc_dev_to_dev(xrcc_dev), "Releasing channel %s",
+                 dma_chan_name(xrcc_dev->dma_chan));
+        dma_release_channel(xrcc_dev->dma_chan);
     }
+    else
+    {
+        dev_err(xrcc_dev_to_dev(xrcc_dev), "DMA channel not set, a problem?!");
+    }
+
+    dev_info(xrcc_dev_to_dev(xrcc_dev), "RCC Camera Driver Removed");
 
     return 0;
 }
@@ -113,18 +134,7 @@ static struct platform_driver xrcc_cam_driver = {
     .remove = xrcc_cam_remove,
 };
 
-static int __init xrcc_cam_init(void)
-{
-    return platform_driver_register(&xrcc_cam_driver);
-
-}
-late_initcall(xrcc_cam_init);
-
-static void __exit xrcc_cam_exit(void)
-{
-    platform_driver_unregister(&xrcc_cam_driver);
-}
-module_exit(xrcc_cam_exit)
+module_platform_driver(xrcc_cam_driver);
 
 MODULE_AUTHOR("Jure Menart (juremenart@gmail.com)");
 MODULE_DESCRIPTION("RC Car Control Camera Driver");

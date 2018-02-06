@@ -28,12 +28,18 @@ typedef struct xrcc_cam_dev_s {
     enum dma_transaction_type  type;
     bool                       done;
     uint32_t                 **buf; // Buffers in memory
-    dma_addr_t                *dma_addr; // Buffers mapped to DMA structures
+    dma_addr_t                *phy_addr; // Buffers mapped to DMA structures
 
     struct xilinx_vdma_config  dma_config;
     struct dma_chan           *dma_chan;
     struct device             *dev;
 
+    struct dma_async_tx_descriptor *rxd;
+    struct dma_interleaved_template xt;
+    struct completion rx_cmp;
+
+    enum dma_ctrl_flags flags;
+    enum dma_status     status;
 } xrcc_cam_dev_t;
 
 static struct device *xrcc_dev_to_dev(xrcc_cam_dev_t *dev)
@@ -60,10 +66,10 @@ static int xrcc_cam_cleanup_buf(xrcc_cam_dev_t *dev)
         dev->buf = NULL;
     }
 
-    if(dev->dma_addr)
+    if(dev->phy_addr)
     {
-        kfree(dev->dma_addr);
-        dev->dma_addr = NULL;
+        kfree(dev->phy_addr);
+        dev->phy_addr = NULL;
     }
 
     XRCC_DEBUG(xrcc_dev_to_dev(dev), "DMA buffers released");
@@ -94,8 +100,8 @@ static int xrcc_cam_init_buf(xrcc_cam_dev_t *dev)
         }
     }
 
-    dev->dma_addr = kmalloc(sizeof(dma_addr_t) * dev->frm_cnt, GFP_KERNEL);
-    if(!dev->dma_addr)
+    dev->phy_addr = kmalloc(sizeof(dma_addr_t) * dev->frm_cnt, GFP_KERNEL);
+    if(!dev->phy_addr)
     {
         goto mem_err_exit;
     }
@@ -136,9 +142,18 @@ static int xrcc_cam_add_channel(xrcc_cam_dev_t *dev,  const char *chan_name)
     return 0;
 }
 
+static void xrcc_cam_slave_rx_callback(void *param)
+{
+    xrcc_cam_dev_t *dev = (xrcc_cam_dev_t *)param;
+    XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_slave_rx_callback()");
+    complete(&dev->rx_cmp);
+}
+
 static int xrcc_cam_dma_config(xrcc_cam_dev_t *dev)
 {
     int err, i;
+    dma_cookie_t rx_cookie;
+
     // Cleanup the configuration
     memset(&dev->dma_config, 0, sizeof(struct xilinx_vdma_config));
 
@@ -155,14 +170,22 @@ static int xrcc_cam_dma_config(xrcc_cam_dev_t *dev)
     }
 
     // Map allocated buffers to DMA addresses
+    dev->xt.dir         = DMA_DEV_TO_MEM;
+    dev->xt.numf        = dev->height;
+    dev->xt.sgl[0].size = dev->width;
+    dev->xt.sgl[0].icg  = 0;
+    dev->xt.frame_size  = 1;
+
+    dev->flags = DMA_CTRL_ACK | DMA_PREP_INTERRUPT;
+
     for(i = 0; i < (uint32_t)dev->frm_cnt; i++)
     {
         struct dma_device *dma_dev = dev->dma_chan->device;
 
-        dev->dma_addr[i] = dma_map_single(dma_dev->dev, dev->buf[i],
+        dev->phy_addr[i] = dma_map_single(dma_dev->dev, dev->buf[i],
                                           dev->buf_size, DMA_DEV_TO_MEM);
 
-        err = dma_mapping_error(dma_dev->dev, dev->dma_addr[i]);
+        err = dma_mapping_error(dma_dev->dev, dev->phy_addr[i]);
         if(err)
         {
             XRCC_ERR(xrcc_dev_to_dev(dev),
@@ -170,8 +193,39 @@ static int xrcc_cam_dma_config(xrcc_cam_dev_t *dev)
             return err;
         }
 
-        
+        dev->xt.dst_start   = dev->phy_addr[i];
+        dev->rxd = dma_dev->device_prep_interleaved_dma(dev->dma_chan,
+                                                        &dev->xt,
+                                                        dev->flags);
+        rx_cookie = dev->rxd->tx_submit(dev->rxd);
+        XRCC_DEBUG(xrcc_dev_to_dev(dev), "rx_cookie=%d", rx_cookie);
+        if(dma_submit_error(rx_cookie))
+        {
+            XRCC_ERR(xrcc_dev_to_dev(dev), "Submit error, rx_cookie: %d",
+                     rx_cookie);
+            return -1;
+        }
     }
+
+    init_completion(&dev->rx_cmp);
+    dev->rxd->callback = xrcc_cam_slave_rx_callback;
+    dev->rxd->callback_param = &dev;
+
+    dma_async_issue_pending(dev->dma_chan);
+
+    {
+        // start & wait for compeltion
+        unsigned long rx_tmo = msecs_to_jiffies(3000);
+        dma_cookie_t last_cookie, used_cookie;
+        rx_tmo = wait_for_completion_timeout(&dev->rx_cmp, rx_tmo);
+
+        dev->status = dma_async_is_tx_complete(dev->dma_chan, rx_cookie,
+                                               &last_cookie, &used_cookie);
+
+        XRCC_DEBUG(xrcc_dev_to_dev(dev), "status=%d last_cookie=%d used_cookie=%d",
+                   dev->status, last_cookie, used_cookie);
+    }
+
     return 0;
 }
 
@@ -180,6 +234,17 @@ static int xrcc_cam_cleanup(xrcc_cam_dev_t *dev)
     if(!dev)
     {
         return 0;
+    }
+
+    if(dev->phy_addr)
+    {
+        int i;
+        for(i = 0; i < dev->frm_cnt; i++)
+        {
+            struct dma_device *dma_dev = dev->dma_chan->device;
+            dma_unmap_single(dma_dev->dev, dev->phy_addr[i],
+                             dev->buf_size, DMA_DEV_TO_MEM);
+        }
     }
 
     if(dev->dma_chan)

@@ -14,6 +14,8 @@
 #include <linux/slab.h>
 #include <linux/wait.h>
 #include <linux/dma/xilinx_dma.h>
+#include <media/media-device.h>
+#include <media/v4l2-device.h>
 
 #define XRCC_DEBUG(...) dev_info(__VA_ARGS__)
 #define XRCC_INFO(...)  dev_info(__VA_ARGS__)
@@ -24,6 +26,9 @@ typedef struct xrcc_cam_dev_s {
     uint32_t                   frm_cnt;
     uint32_t                   width, height;
     uint32_t                   buf_size; // automatically calculated when allocating buffers
+    struct device             *dev;
+    struct v4l2_device        *v4l2_dev;
+    struct media_device       *media_dev;
 
     enum dma_transaction_type  type;
     bool                       done;
@@ -32,7 +37,6 @@ typedef struct xrcc_cam_dev_s {
 
     struct xilinx_vdma_config  dma_config;
     struct dma_chan           *dma_chan;
-    struct device             *dev;
 
     struct dma_async_tx_descriptor *rxd;
     struct dma_interleaved_template xt;
@@ -93,11 +97,19 @@ static int xrcc_cam_init_buf(xrcc_cam_dev_t *dev)
     }
     for(i = 0; i < dev->frm_cnt; i++)
     {
+        int k;
         dev->buf[i] = kmalloc(dev->buf_size, GFP_KERNEL);
         if(!dev->buf[i])
         {
             goto mem_err_exit;
         }
+
+        printk("xrcc_cam_init_buf() buffer %d data=", i);
+        for(k = 0; k < 6; k++)
+        {
+            printk("%d ", dev->buf[i][k]);
+        }
+        printk("\n");
     }
 
     dev->phy_addr = kmalloc(sizeof(dma_addr_t) * dev->frm_cnt, GFP_KERNEL);
@@ -217,15 +229,51 @@ static int xrcc_cam_dma_config(xrcc_cam_dev_t *dev)
         // start & wait for compeltion
         unsigned long rx_tmo = msecs_to_jiffies(3000);
         dma_cookie_t last_cookie, used_cookie;
+        int i;
+
         rx_tmo = wait_for_completion_timeout(&dev->rx_cmp, rx_tmo);
 
         dev->status = dma_async_is_tx_complete(dev->dma_chan, rx_cookie,
                                                &last_cookie, &used_cookie);
 
+        for(i = 0; i < dev->frm_cnt; i++)
+        {
+            int k;
+            printk("xrcc_cam_dma_config() buffer %d data=", i);
+            for(k = 0; k < 6; k++)
+            {
+                printk("%d ", dev->buf[i][k]);
+            }
+            printk("\n");
+        }
+
         XRCC_DEBUG(xrcc_dev_to_dev(dev), "status=%d last_cookie=%d used_cookie=%d",
                    dev->status, last_cookie, used_cookie);
     }
 
+    return 0;
+}
+
+static int xrcc_cam_v4l2_cleanup(xrcc_cam_dev_t *dev)
+{
+    XRCC_DEBUG(xrcc_dev_to_dev(dev), "About to remove V4L2");
+    if(dev->v4l2_dev)
+    {
+        v4l2_device_unregister(dev->v4l2_dev);
+        kfree(dev->v4l2_dev);
+        dev->v4l2_dev = NULL;
+    }
+
+    XRCC_DEBUG(xrcc_dev_to_dev(dev), "About to remove Media device");
+    if(dev->media_dev)
+    {
+        media_device_unregister(dev->media_dev);
+        media_device_cleanup(dev->media_dev);
+        kfree(dev->media_dev);
+        dev->media_dev = NULL;
+    }
+
+    XRCC_DEBUG(xrcc_dev_to_dev(dev), "Cleaned!");
     return 0;
 }
 
@@ -236,9 +284,24 @@ static int xrcc_cam_cleanup(xrcc_cam_dev_t *dev)
         return 0;
     }
 
-    if(dev->phy_addr)
+    xrcc_cam_v4l2_cleanup(dev);
+
+    if(dev->v4l2_dev)
     {
-        int i;
+        v4l2_device_unregister(dev->v4l2_dev);
+        kfree(dev->v4l2_dev);
+        dev->v4l2_dev = NULL;
+    }
+    if(dev->media_dev)
+    {
+        media_device_unregister(dev->media_dev);
+        media_device_cleanup(dev->media_dev);
+        kfree(dev->media_dev);
+        dev->media_dev = NULL;
+    }
+
+    if(dev->phy_addr)
+    {        int i;
         for(i = 0; i < dev->frm_cnt; i++)
         {
             struct dma_device *dma_dev = dev->dma_chan->device;
@@ -259,6 +322,46 @@ static int xrcc_cam_cleanup(xrcc_cam_dev_t *dev)
     {
         xrcc_cam_cleanup_buf(dev);
     }
+
+    return 0;
+}
+
+static int xrcc_cam_v4l2_init(xrcc_cam_dev_t *dev)
+{
+    int retVal;
+
+    dev->media_dev = kmalloc(sizeof(struct media_device), GFP_KERNEL);
+    if(!dev->media_dev)
+    {
+        XRCC_ERR(xrcc_dev_to_dev(dev),
+                "Can not allocate memory for media device");
+        return -ENOMEM;
+    }
+    dev->media_dev->dev = xrcc_dev_to_dev(dev);
+    strlcpy(dev->media_dev->model, "RC Car Control Video Device",
+            sizeof(dev->media_dev->model));
+    dev->media_dev->hw_revision = 0;
+
+    dev->v4l2_dev = kmalloc(sizeof(struct v4l2_device), GFP_KERNEL);
+    if(!dev->v4l2_dev)
+    {
+        XRCC_ERR(xrcc_dev_to_dev(dev),
+                 "Can not allocate memory for V4L2 device");
+        return -ENOMEM;
+    }
+
+    dev->v4l2_dev->mdev = dev->media_dev;
+
+    retVal = v4l2_device_register(xrcc_dev_to_dev(dev), dev->v4l2_dev);
+    if(retVal < 0)
+    {
+        XRCC_ERR(xrcc_dev_to_dev(dev), "V4L2 device registraion failed (%d)",
+                 retVal);
+        media_device_cleanup(dev->media_dev);
+        return retVal;
+    }
+
+    XRCC_DEBUG(xrcc_dev_to_dev(dev), "V4L2 device registered");
 
     return 0;
 }
@@ -321,6 +424,13 @@ static int xrcc_cam_probe(struct platform_device *pdev)
     if(err)
     {
         XRCC_ERR(xrcc_dev_to_dev(xrcc_dev), "Problem configuring the DMA");
+        goto probe_err_exit;
+    }
+
+    err = xrcc_cam_v4l2_init(xrcc_dev);
+    if(err)
+    {
+        XRCC_ERR(xrcc_dev_to_dev(xrcc_dev), "Problem setting up V4L2 device");
         goto probe_err_exit;
     }
 

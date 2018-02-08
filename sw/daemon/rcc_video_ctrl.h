@@ -20,6 +20,7 @@ private:
         uint32_t rxSizeStat;  // 0x10 -  RC  - RX / Image Receiver Size Status
         uint32_t rxFrameCnts; // 0x14 -  RO  - RX / Image Receiver Frame Counter
         uint32_t rxFrameLen;  // 0x18 -  RO  - RX / Image Receiver Frame Length (can be used for framerate calculation)
+        uint32_t rxFifoCtrl;  // 0x1C - R/W  - RX FIFO control (when to start FLUSH to AXI-Stream, the line length)
     } axiVideoCtrlRegs_t;
 
 public:

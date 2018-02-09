@@ -94,6 +94,45 @@ int rccSysCtrl::version(void)
     return -1;
 }
 
+int rccSysCtrl::writeReg(uint8_t regOffset, uint32_t regValue)
+{
+    uint32_t *addr = (uint32_t *)mRegs;
+
+    if(!isInitialized())
+    {
+        return -1;
+    }
+
+    *(addr+(regOffset>>2)) = regValue;
+    return 0;
+}
+
+uint32_t rccSysCtrl::readReg(uint8_t regOffset)
+{
+    uint32_t val = 0xdeadbeef;
+    uint32_t *addr = (uint32_t *)mRegs;
+
+    if(!isInitialized())
+    {
+        return val;
+    }
+
+    return *(addr+(regOffset>>2));
+}
+
+void rccSysCtrl::dumpRegs(void)
+{
+    uint32_t *addr = (uint32_t *)mRegs;
+
+    for(int i = 0; i < (int)(sizeof(axiSysCtrlRegs_t)>>2); i++)
+    {
+        std::cout << "Offset=0x" << std::hex << (i*4)
+                  << " Value=0x" << *(addr+i) << std::endl;
+    }
+
+    return;
+}
+
 int rccSysCtrl::pwmMuxSel(void)
 {
     if(isInitialized())

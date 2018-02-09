@@ -44,6 +44,8 @@ private:
         uint32_t pwmPeriod;   // 0x0C - R/W  - PWM Period (for both channels)
         uint32_t pwmActive0;  // 0x10 - R/W  - PWM Active0
         uint32_t pwmActive1;  // 0x14 - R/W  - PWM Active1
+        uint32_t vidCtrlStat; // 0x1C - R/W  - Video input measurement ctrl/status
+        uint32_t vidFrmStat;  // 0x20 -  RO  - Video input frame measurement
     } axiSysCtrlRegs_t;
 
 public:
@@ -56,6 +58,11 @@ public:
     bool isInitialized(void) { return (mRegs != NULL); };
 
     int version(void);
+
+    int      writeReg(uint8_t regOffset, uint32_t regValue);
+    uint32_t readReg(uint8_t regOffset);
+    void     dumpRegs(void);
+
 
     int pwmMuxSel(void);
     int setPwmMuxSel(int muxSel);

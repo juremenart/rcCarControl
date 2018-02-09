@@ -85,7 +85,7 @@ static int xrcc_cam_init_buf(xrcc_cam_dev_t *dev)
 {
     uint32_t i;
 
-    dev->buf_size = dev->width * dev->height * sizeof(uint32_t);
+    dev->buf_size = dev->width * dev->height * 2;
 
     // First cleanup if needed!
     xrcc_cam_cleanup_buf(dev);
@@ -104,12 +104,13 @@ static int xrcc_cam_init_buf(xrcc_cam_dev_t *dev)
             goto mem_err_exit;
         }
 
-        printk("xrcc_cam_init_buf() buffer %d data=", i);
+        memset(dev->buf[i], 0, dev->buf_size);
+
+        printk("xrcc_cam_init_buf() buffer %d (buf_size=%d) data=", i, dev->buf_size);
         for(k = 0; k < 6; k++)
         {
             printk("%d ", dev->buf[i][k]);
         }
-        printk("\n");
     }
 
     dev->phy_addr = kmalloc(sizeof(dma_addr_t) * dev->frm_cnt, GFP_KERNEL);
@@ -239,7 +240,8 @@ static int xrcc_cam_dma_config(xrcc_cam_dev_t *dev)
         for(i = 0; i < dev->frm_cnt; i++)
         {
             int k;
-            printk("xrcc_cam_dma_config() buffer %d data=", i);
+            printk("xrcc_cam_dma_config() buffer %d (phy_addr=0x%08x) data=", i,
+                dev->phy_addr[i]);
             for(k = 0; k < 6; k++)
             {
                 printk("%d ", dev->buf[i][k]);

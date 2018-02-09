@@ -22,6 +22,10 @@ module video_ctrl_top #(
 
    rx_cfg_if    rx_cfg();
 
+   axi4_stream_if #(.DW(DW)) tp_stream(.ACLK(axi_video_o.ACLK), .ARESETn(axi_video_o.ARESETn));
+
+   axi4_stream_if #(.DW(DW)) video_stream(.ACLK(axi_video_o.ACLK), .ARESETn(axi_video_o.ARESETn));
+
    // TODO: tp_* signals are not sync'd to stream clock!
    video_ctrl_axi #(.DW(DW), .AW(AW), .VER(VER)) video_ctrl_axi_i
      (
@@ -41,12 +45,30 @@ module video_ctrl_top #(
      (
       .bt656_stream_i(bt656_video_i),
 
-      .axi_stream_o(axi_video_o),
+      .axi_stream_o(video_stream),
 
       .axi_clk_i(axi_bus.ACLK),
       .axi_rstn_i(axi_bus.ARESETn),
       .rx_cfg(rx_cfg)
       );
+
+   axi_stream_tp_gen axi_stream_tp_gen_i
+     (
+      .axi_stream_o(tp_stream),
+
+      .tp_enable_i(tp_gen_en),
+      .tp_type_i(tp_type),
+      .tp_width_i(tp_width),
+      .tp_height_i(tp_height));
+
+   axi_stream_mux axi_stream_mux_i
+     (
+      .axi_video_o(axi_video_o),
+
+      .axi_video_in1_i(video_stream),
+      .axi_video_in2_i(tp_stream),
+
+      .mux_sel(tp_gen_en));
 
 endmodule : video_ctrl_top
 

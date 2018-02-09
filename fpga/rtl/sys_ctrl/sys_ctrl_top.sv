@@ -13,7 +13,9 @@ module sys_ctrl_top #(
     output pwm0_pad_o, // output PWM0 to pad
     output pwm1_pad_o, // output PWM1 to pad
     input  pwm0_pad_i, // input PWM0 from pad/RF controller
-    input  pwm1_pad_i  // input PWM1 from pad/RF controller
+    input  pwm1_pad_i,  // input PWM1 from pad/RF controller
+
+    axi4_stream_if.m axi_video_i
     );
 
    logic    pwm_mux_sel;
@@ -23,6 +25,12 @@ module sys_ctrl_top #(
    logic [PWM_CNT_WIDTH-1:0] pwm_period;
    logic [PWM_CNT_WIDTH-1:0] pwm_active_0;
    logic [PWM_CNT_WIDTH-1:0] pwm_active_1;
+
+   logic                     video_meas_en;
+   logic [7:0]               video_frames_cnt_o;
+   logic [23:0]              video_frame_len_o;
+   logic [11:0]              video_lines_cnt_o;
+   logic [11:0]              video_pixel_cnt_o;
 
    assign pwm0_pad_o = pwm_mux_sel ? pwm0_pad_i : pwm0_sys;
    assign pwm1_pad_o = pwm_mux_sel ? pwm1_pad_i : pwm1_sys;
@@ -35,7 +43,13 @@ module sys_ctrl_top #(
       .pwm_enable_o(pwm_enable),
       .pwm_period_o(pwm_period),
       .pwm_active_0_o(pwm_active_0),
-      .pwm_active_1_o(pwm_active_1));
+      .pwm_active_1_o(pwm_active_1),
+
+      .video_meas_en_o(video_meas_en),
+      .video_frames_cnt_i(video_frames_cnt),
+      .video_lines_cnt_i(video_lines_cnt),
+      .video_pixel_cnt_i(video_pixel_cnt),
+      .video_frame_len_i(video_frame_len_i));
 
    pwm_gen #(.CNT_WIDTH(PWM_CNT_WIDTH)) pwm_gen_i
      (
@@ -49,6 +63,15 @@ module sys_ctrl_top #(
       .pwm_period_i(pwm_period),
       .pwm_active_0_i(pwm_active_0),
       .pwm_active_1_i(pwm_active_1));
+
+   video_meas video_meas_i
+     (
+      .axi_video_i(axi_video_i),
+      .video_meas_en_i(video_meas_en),
+      .video_frames_cnt_o(video_frames_cnt),
+      .video_lines_cnt_o(video_lines_cnt),
+      .video_pixel_cnt_o(video_pixel_cnt),
+      .video_frame_len_o(video_frame_len_i));
 
 endmodule : sys_ctrl_top
 

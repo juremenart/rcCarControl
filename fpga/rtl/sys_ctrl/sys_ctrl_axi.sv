@@ -17,16 +17,24 @@ module sys_ctrl_axi #(
     output logic                     pwm_enable_o,
     output logic [PWM_CNT_WIDTH-1:0] pwm_period_o,
     output logic [PWM_CNT_WIDTH-1:0] pwm_active_0_o,
-    output logic [PWM_CNT_WIDTH-1:0] pwm_active_1_o
+    output logic [PWM_CNT_WIDTH-1:0] pwm_active_1_o,
+
+    output logic video_meas_en_o,
+    input  logic [7:0] video_frames_cnt_i,
+    input  logic [23:0] video_frame_len_i,
+    input  logic [11:0] video_lines_cnt_i,
+    input  logic [11:0] video_pixel_cnt_i
     );
 
    // Register map
-   localparam VER_ADDR        = 3'h0; // RO  Version register
-   localparam IOCTRL_ADDR     = 3'h1; // R/W IO Control register
-   localparam PWM_CTRL_STATUS = 3'h2; // R/W PWM Ctrl/Status register
-   localparam PWM_PERIOD      = 3'h3; // R/W PWM Period
-   localparam PWM_ACTIVE_0    = 3'h4; // R/W PWM Active (high) for PWM0
-   localparam PWM_ACTIVE_1    = 3'h5; // R/W PWM Active (high) for PWM1
+   localparam VER_ADDR        = 6'h0; // RO  Version register
+   localparam IOCTRL_ADDR     = 6'h1; // R/W IO Control register
+   localparam PWM_CTRL_STATUS = 6'h2; // R/W PWM Ctrl/Status register
+   localparam PWM_PERIOD      = 6'h3; // R/W PWM Period
+   localparam PWM_ACTIVE_0    = 6'h4; // R/W PWM Active (high) for PWM0
+   localparam PWM_ACTIVE_1    = 6'h5; // R/W PWM Active (high) for PWM1
+   localparam VID_CTRL_STATUS = 6'h6; // R/W Video Input Measurement (debugging only)
+   localparam VID_FRM_STATUS  = 6'h7; //  RO Video Input Measurement (Frame status)
 
    //----------------------------------------------
    //-- Signals for user logic register space example
@@ -45,11 +53,15 @@ module sys_ctrl_axi #(
    logic [PWM_CNT_WIDTH-1:0] pwm_active_0;
    logic [PWM_CNT_WIDTH-1:0] pwm_active_1;
 
+   logic                     video_meas_en;
+
    assign pwm_mux_sel_o  = pwm_mux_sel;
    assign pwm_enable_o   = pwm_enable;
    assign pwm_period_o   = pwm_period;
    assign pwm_active_0_o = pwm_active_0;
    assign pwm_active_1_o = pwm_active_1;
+
+   assign video_meas_en_o = video_meas_en;
 
    // Write registers
    always_ff @(posedge axi_bus.ACLK)
@@ -72,6 +84,8 @@ module sys_ctrl_axi #(
               pwm_active_0  <= axi_bus.WDATA[PWM_CNT_WIDTH-1:0];
             PWM_ACTIVE_1:
               pwm_active_1  <= axi_bus.WDATA[PWM_CNT_WIDTH-1:0];
+            VID_CTRL_STATUS:
+              video_meas_en <= axi_bus.WDATA[31];
           endcase
        end
 
@@ -95,6 +109,12 @@ module sys_ctrl_axi #(
               axi_bus.RDATA <= { {(32-PWM_CNT_WIDTH){1'b0}}, pwm_active_0 };
             PWM_ACTIVE_1:
               axi_bus.RDATA <= { {(32-PWM_CNT_WIDTH){1'b0}}, pwm_active_1 };
+            VID_CTRL_STATUS:
+              axi_bus.RDATA <= { video_meas_en, {3{1'b1}},
+                                 video_lines_cnt_i, {4{1'b1}},
+                                 video_pixel_cnt_i };
+            VID_FRM_STATUS:
+              axi_bus.RDATA <= { video_frames_cnt_i, video_frame_len_i };
             default:
               axi_bus.RDATA <= 32'hdeadbeef;
           endcase

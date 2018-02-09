@@ -20,14 +20,15 @@ module video_ctrl_axi #(
     );
 
    // Register map
-   localparam VER_ADDR           = 6'h0; // RO  Version register
-   localparam TP_CTRL_ADDR       = 6'h1; // R/W Test Pattern Control register
-   localparam TP_SIZE_ADDR       = 6'h2; // R/W Test Size register (width, height)
-   localparam RX_CTRL_ADDR       = 6'h3; // R/W Receiver control register
-   localparam RX_SIZE_STAT_ADDR  = 6'h4; // R/C  Size Status register
-   localparam RX_FRAME_CNTS_ADDR = 6'h5; // RO  Frame counter (with AXI clock)
-   localparam RX_FRAME_LEN_ADDR  = 6'h6; // R/W Frame Length (with AXI clock)
-   localparam RX_FIFO_CTRL_ADDR  = 6'h7; // R/W RX FIFO Control
+   localparam VER_ADDR            = 6'h0; // RO  Version register
+   localparam TP_CTRL_ADDR        = 6'h1; // R/W Test Pattern Control register
+   localparam TP_SIZE_ADDR        = 6'h2; // R/W Test Size register (width, height)
+   localparam RX_CTRL_ADDR        = 6'h3; // R/W Receiver control register
+   localparam RX_SIZE_STAT_ADDR   = 6'h4; // R/C  Size Status register
+   localparam RX_FRAME_CNTS_ADDR  = 6'h5; // RO  Frame counter (with AXI clock)
+   localparam RX_FRAME_LEN_ADDR   = 6'h6; // R/W Frame Length (with AXI clock)
+   localparam RX_FIFO_CTRL_ADDR   = 6'h7; // R/W RX FIFO Control
+   localparam RX_FIFO_STATUS_ADDR = 6'h8; // RO  RX FIFO Status
 
    //----------------------------------------------
    //-- Signals for user logic register space example
@@ -133,6 +134,13 @@ module video_ctrl_axi #(
             RX_FIFO_CTRL_ADDR:
               axi_bus.RDATA <= { {5{1'b0}}, data_fifo_line_len,
                                  {5{1'b0}}, data_fifo_start_read };
+            RX_FIFO_STATUS_ADDR:
+              // TODO: This is not sync'd!
+              axi_bus.RDATA <= { {5{1'b0}}, rx_cfg.data_fifo_rd_words,
+                                 rx_cfg.data_fifo_wr_write, rx_cfg.data_fifo_wr_full, {2{1'b0}},
+                                 rx_cfg.data_fifo_rd_state, rx_cfg.data_fifo_rd_read,
+                                 rx_cfg.data_fifo_rd_empty, rx_cfg.data_fifo_rd_data };
+
             default:
               axi_bus.RDATA <= 32'hdeadbeef;
           endcase

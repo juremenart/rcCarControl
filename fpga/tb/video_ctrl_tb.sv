@@ -30,7 +30,7 @@ module video_ctrl_tb
 
    // Stream clock (currently hard-coded to twice the AXI speed)
    initial        s_clk = 1'b1;
-   always #(TP/4) s_clk = ~s_clk;
+   always #(TP/2) s_clk = ~s_clk;
 
    // BT656 PCLK
    initial b_clk = 1'b1;
@@ -68,12 +68,14 @@ module video_ctrl_tb
       axi_read('h00, ver);
       $display("Video controller version = 0x%08x", ver);
       // set some small frame count and enable test pattern generator
-      axi_write('h1C, 32'h0028_0028); // AXI FIFO write set to line * 2
+//      axi_write('h1C, 32'h0028_0028); // AXI FIFO write set to line * 2
+//      axi_write('h08, 32'h000a_0010); // AXI FIFO write set to line * 2
+//      axi_write('h04, 32'h0000_0001); // AXI FIFO write set to line * 2
 
       repeat(2) @(posedge clk);
       axi_write('h0C, { {30{1'b0}}, pure_bt656, 1'b1 }); // Enable receiver
 //      axi_write('h04, 32'h0000_0001); // Enable pattern generation
-      repeat(50000) @(posedge clk);
+      repeat(1800000) @(posedge clk);
 
       // One more case to get it at EOL
 //      repeat(80) @(posedge clk);

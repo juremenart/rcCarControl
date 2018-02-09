@@ -127,7 +127,7 @@ module bd_system_wrapper
 
    // Input to axi_vdma_0
    // AXI4-Lite VDMA physical address: 0x4300_0000
-   axi4_stream_if #(.DW(AXI_STREAM_DW)) axi_str_video(.ACLK(FCLK_CLK1), .ARESETn(FCLK_RESET1_N));
+   axi4_stream_if #(.DW(AXI_STREAM_DW)) axi_str_video(.ACLK(FCLK_CLK0), .ARESETn(FCLK_RESET0_N));
 
    // Input of BT 656 stream (YCbCr 4:2:2, but also RGB should be supported)
    bt656_stream_if bt656_input_video();
@@ -148,7 +148,9 @@ module bd_system_wrapper
       .pwm0_pad_o(pwm0),
       .pwm1_pad_o(pwm1),
       .pwm0_pad_i(wm0_rf),
-      .pwm1_pad_i(pwm1_rf));
+      .pwm1_pad_i(pwm1_rf),
+
+      .axi_video_i(axi_str_video));
 
 
    // I2C for camera is connected directly from PS as iic0

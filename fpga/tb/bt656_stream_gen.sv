@@ -27,32 +27,34 @@ module bt656_stream_gen
    // But can be reduced for debugigng proposes
    // For nice reference table one can check also: https://www.intersil.com/content/dam/Intersil/documents/an97/an9728.pdf
 
-   parameter num_hblank = 10;
-   parameter num_pixels = 20; // number of pixels in line
-   parameter num_lines = 16;
-   const line_params_t line_params[7] = {
-                              //   SL,  EL,  F,  Vs
-                                {   1,   2,  0,  1 },
-                                {   3,   6,  0,  0 },
-                                {   7,   8,  0,  1 },
-                                {   9,  10,  1,  1 },
-                                {  11,  14,  1,  0 },
-                                {  15,  16,  1,  1 },
-                                {  -1,  -1, -1, -1 } };
+//   parameter num_hblank = 10;
+//   parameter num_pixels = 20; // number of pixels in line
+//   parameter num_lines = 16;
+//   const line_params_t line_params[7] = {
+//                              //   SL,  EL,  F,  Vs
+//                                {   1,   2,  0,  1 },
+//                                {   3,   6,  0,  0 },
+//                                {   7,   8,  0,  1 },
+//                                {   9,  10,  1,  1 },
+//                                {  11,  14,  1,  0 },
+//                                {  15,  16,  1,  1 },
+//                                {  -1,  -1, -1, -1 } };
 
 //   // 525/60 Video stream
-//   parameter num_hblank = 272;
-//   parameter num_pixels = 640;
-//   parameter num_lines = 525;
-//   // Field & Vertical blanking
-//   line_params_t line_params = {
-//                              //   SL,  EL,  F,  V
-//                                {   1,   3,  1,  1 },
-//                                {   4,  20,  0,  1 },
-//                                {  21, 263,  0,  0 },
-//                                { 264, 265,  0,  1 },
-//                                { 266, 282,  1,  1 },
-//                                { 283, 525,  1,  0 } };
+   parameter num_hblank = 272;
+   parameter num_pixels = 640;
+   parameter num_lines = 525;
+   // Field & Vertical blanking
+   line_params_t line_params[7] = {
+                              //   SL,  EL,  F,  V
+                                {   1,   3,  1,  1 },
+                                {   4,  20,  0,  1 },
+                                {  21, 263,  0,  0 },
+                                { 264, 265,  0,  1 },
+                                { 266, 282,  1,  1 },
+                                { 283, 525,  1,  0 },
+                                {  -1,  -1, -1, -1 } };
+
 //
 //   // 625/50 Video stream
 //   parameter num_hblank = 344;

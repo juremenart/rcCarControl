@@ -15,6 +15,18 @@ interface rx_cfg_if
    logic [10:0] data_fifo_start;
    logic [10:0] data_fifo_line_len;
 
+   // TODO: This is not sync'd - it's directly connected from FIFO (debugging
+   // purposes - later either make it correct or remove it
+   logic        data_fifo_rd_read;
+   logic        data_fifo_rd_empty;
+   logic [7:0]  data_fifo_rd_data;
+   logic [10:0] data_fifo_rd_words;
+   logic [1:0]  data_fifo_rd_state;
+
+   logic        data_fifo_wr_write;
+   logic        data_fifo_wr_full;
+   logic [7:0]  data_fifo_wr_data;
+
    // Source
    modport s (
               output rx_enable,
@@ -26,7 +38,17 @@ interface rx_cfg_if
               output cam_pwdn,
               output cam_rstn,
               output data_fifo_start,
-              output data_fifo_line_len
+              output data_fifo_line_len,
+
+              // fifo debugging status
+              input  data_fifo_rd_read,
+              input  data_fifo_rd_empty,
+              input  data_fifo_rd_data,
+              input  data_fifo_rd_words,
+              input  data_fifo_rd_state,
+              input  data_fifo_wr_write,
+              input  data_fifo_wr_full,
+              input  data_fifo_wr_data
               );
 
    // drain
@@ -40,22 +62,42 @@ interface rx_cfg_if
               input  cam_pwdn,
               input  cam_rstn,
               input  data_fifo_start,
-              input  data_fifo_line_len
+              input  data_fifo_line_len,
+
+              // fifo debugging status
+              output data_fifo_rd_read,
+              output data_fifo_rd_empty,
+              output data_fifo_rd_data,
+              output data_fifo_rd_words,
+              output data_fifo_rd_state,
+              output data_fifo_wr_write,
+              output data_fifo_wr_full,
+              output data_fifo_wr_data
               );
 
 
    // monitor
    modport m (
-              input  rx_enable,
-              input  pure_bt656,
-              input  size_status,
-              input  rst_size_err,
-              input  frame_cnts,
-              input  frame_length,
-              input  cam_pwdn,
-              input  cam_rstn,
-              input  data_fifo_start,
-              input  data_fifo_line_len
+              input rx_enable,
+              input pure_bt656,
+              input size_status,
+              input rst_size_err,
+              input frame_cnts,
+              input frame_length,
+              input cam_pwdn,
+              input cam_rstn,
+              input data_fifo_start,
+              input data_fifo_line_len,
+
+              // fifo debugging status
+              input data_fifo_rd_read,
+              input data_fifo_rd_empty,
+              input data_fifo_rd_data,
+              input data_fifo_rd_words,
+              input data_fifo_rd_state,
+              input data_fifo_wr_write,
+              input data_fifo_wr_full,
+              input data_fifo_wr_data
               );
 
 

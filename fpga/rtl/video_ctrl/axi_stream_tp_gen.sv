@@ -181,8 +181,11 @@ module axi_stream_tp_gen
             begin
                // depends on the type I guess - for now hard-coded
                // Assuming TDATA = 32 bit!
-               axi_stream_o.TDATA <= { free_cnt[7:0], frame_cnt[7:0],
-                                       pixel_cnt[7:0], line_cnt[7:0] };
+//               axi_stream_o.TDATA <= { free_cnt[7:0], frame_cnt[7:0],
+//                                       pixel_cnt[7:0], line_cnt[7:0] };
+
+               // Assuming TDATA = 8 bit!
+               axi_stream_o.TDATA <= pixel_cnt[7:0];
 
                if(gen_start_d)
                  axi_stream_o.TVALID <= 1'b1;

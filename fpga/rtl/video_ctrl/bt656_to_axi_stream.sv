@@ -315,7 +315,7 @@ module bt656_to_axi_stream
    always_ff @(posedge axi_clk_i)
      if(!axi_rstn_i)
        begin
-          frame_length      <= '0;
+          frame_length           <= '0;
           rx_cfg.frame_length    <= '0;
           rx_cfg.frame_cnts      <= '0;
        end
@@ -371,6 +371,16 @@ module bt656_to_axi_stream
    logic        stream_in_new_frame; // we already have sync_in_new_frame for AXI-Lite :)
 
    logic        fifo_start_read; // start read when write pointer >= fifo_start_read configuration
+
+   // TODO: FIFO Debugging status - sync it correctly to AXI-Lite or remove it!
+   assign rx_cfg.data_fifo_rd_read = data_fifo_read;
+   assign rx_cfg.data_fifo_rd_empty = data_fifo_empty;
+   assign rx_cfg.data_fifo_rd_data = data_fifo_read_data;
+   assign rx_cfg.data_fifo_rd_words = data_fifo_read_words;
+   assign rx_cfg.data_fifo_rd_state = axi_state;
+   assign rx_cfg.data_fifo_wr_write = data_fifo_write;
+   assign rx_cfg.data_fifo_wr_full = data_fifo_full;
+   assign rx_cfg.data_fifo_wr_data = in_data[0];
 
    async_fifo #(.DATA_WIDTH(8), .ADDRESS_WIDTH(11)) data_fifo_i
      ( // Read part - fast AXI Stream running @ 100MHz

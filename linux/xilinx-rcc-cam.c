@@ -184,7 +184,7 @@ static int xrcc_cam_dma_config(xrcc_cam_dev_t *dev)
     // Map allocated buffers to DMA addresses
     dev->xt.dir         = DMA_DEV_TO_MEM;
     dev->xt.numf        = dev->height;
-    dev->xt.sgl[0].size = dev->width;
+    dev->xt.sgl[0].size = dev->width * 2; // x2 because we have still packed YCbCr format to 8 bits
     dev->xt.sgl[0].icg  = 0;
     dev->xt.frame_size  = 1;
 
@@ -284,7 +284,7 @@ static int xrcc_cam_cleanup(xrcc_cam_dev_t *dev)
         return 0;
     }
 
-    xrcc_cam_v4l2_cleanup(dev);
+//    xrcc_cam_v4l2_cleanup(dev);
 
     if(dev->v4l2_dev)
     {
@@ -427,12 +427,12 @@ static int xrcc_cam_probe(struct platform_device *pdev)
         goto probe_err_exit;
     }
 
-    err = xrcc_cam_v4l2_init(xrcc_dev);
-    if(err)
-    {
-        XRCC_ERR(xrcc_dev_to_dev(xrcc_dev), "Problem setting up V4L2 device");
-        goto probe_err_exit;
-    }
+//    err = xrcc_cam_v4l2_init(xrcc_dev);
+//    if(err)
+//    {
+//        XRCC_ERR(xrcc_dev_to_dev(xrcc_dev), "Problem setting up V4L2 device");
+//        goto probe_err_exit;
+//    }
 
     XRCC_INFO(xrcc_dev_to_dev(xrcc_dev), "RCC Camera Driver Probed");
 

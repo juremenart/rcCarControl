@@ -41,6 +41,9 @@ private:
         uint32_t s2mmHSize;      // 0xA4 - R/W  - S2MM Horizontal Size
         uint32_t s2mmFrmDlyStrd; // 0xA8 - R/W  - S2MM Frame Delay and Stride
         uint32_t s2mmStAddr[16]; // 0xAC - 0xE8 - R/W - S2MM Start Address (1-16)
+        uint32_t reserved7;      // 0xEC -  RO  - Reserved
+        uint32_t s2mmHSizeStat;  // 0xF0 -  RO  - S2MM Horizontal Size Status
+        uint32_t s2mmVSizeStat;  // 0xF4 -  RO  - S2MM Vertical Size Status
     } axiVdmaCtrlRegs_t;
 
 public:

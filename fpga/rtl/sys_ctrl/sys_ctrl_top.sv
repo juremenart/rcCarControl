@@ -27,10 +27,10 @@ module sys_ctrl_top #(
    logic [PWM_CNT_WIDTH-1:0] pwm_active_1;
 
    logic                     video_meas_en;
-   logic [7:0]               video_frames_cnt_o;
-   logic [23:0]              video_frame_len_o;
-   logic [11:0]              video_lines_cnt_o;
-   logic [11:0]              video_pixel_cnt_o;
+   logic [7:0]               video_frames_cnt;
+   logic [23:0]              video_frame_len;
+   logic [11:0]              video_lines_cnt;
+   logic [11:0]              video_pixel_cnt;
 
    assign pwm0_pad_o = pwm_mux_sel ? pwm0_pad_i : pwm0_sys;
    assign pwm1_pad_o = pwm_mux_sel ? pwm1_pad_i : pwm1_sys;
@@ -49,7 +49,7 @@ module sys_ctrl_top #(
       .video_frames_cnt_i(video_frames_cnt),
       .video_lines_cnt_i(video_lines_cnt),
       .video_pixel_cnt_i(video_pixel_cnt),
-      .video_frame_len_i(video_frame_len_i));
+      .video_frame_len_i(video_frame_len));
 
    pwm_gen #(.CNT_WIDTH(PWM_CNT_WIDTH)) pwm_gen_i
      (
@@ -71,7 +71,7 @@ module sys_ctrl_top #(
       .video_frames_cnt_o(video_frames_cnt),
       .video_lines_cnt_o(video_lines_cnt),
       .video_pixel_cnt_o(video_pixel_cnt),
-      .video_frame_len_o(video_frame_len_i));
+      .video_frame_len_o(video_frame_len));
 
 endmodule : sys_ctrl_top
 

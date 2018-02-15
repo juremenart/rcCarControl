@@ -12,9 +12,10 @@ module video_ctrl_axi #(
 
     // test pattern generator settings
     output logic        tp_en_gen_o,
-    output logic [1:0]  tp_type_o,
     output logic [10:0] tp_width_o,
     output logic [10:0] tp_height_o,
+    output logic [6:0]  tp_num_frames_o,
+    output logic [23:0] tp_blanking_o,
 
     rx_cfg_if.s rx_cfg
     );
@@ -43,8 +44,9 @@ module video_ctrl_axi #(
 
    // Test pattern registers
    reg                     tp_en_gen_r;
-   reg [1:0]               tp_type_r;
    reg [10:0]              tp_width_r, tp_height_r;
+   reg [6:0]      tp_num_frames_r;
+   reg [23:0]     tp_blanking_r;
 
    // BT656 receiver registers
    reg                     rx_enable;
@@ -60,7 +62,6 @@ module video_ctrl_axi #(
      if (axi_bus.ARESETn == 1'b0)
        begin
           tp_en_gen_r          <= 1'b0;
-          tp_type_r            <= 2'b00;
           tp_width_r           <= 640;
           tp_height_r          <= 480;
           rx_enable            <= 1'b0;
@@ -70,6 +71,8 @@ module video_ctrl_axi #(
           rx_cfg.rst_size_err  <= 1'b0;
           data_fifo_start_read <= (640<<1);
           data_fifo_line_len   <= (640<<1);
+          tp_num_frames_r      <= '0;
+          tp_blanking_r        <= (640<<2);
        end
      else
        begin
@@ -81,8 +84,9 @@ module video_ctrl_axi #(
                  // version register - read only
                  TP_CTRL_ADDR:
                    begin
-                      tp_en_gen_r <= axi_bus.WDATA[0] ;
-                      tp_type_r   <= axi_bus.WDATA[5:4];
+                      tp_en_gen_r     <= axi_bus.WDATA[0];
+                      tp_num_frames_r <= axi_bus.WDATA[7:1];
+                      tp_blanking_r   <= axi_bus.WDATA[31:8];
                    end
                  TP_SIZE_ADDR:
                    begin
@@ -120,7 +124,7 @@ module video_ctrl_axi #(
             VER_ADDR:
               axi_bus.RDATA <= VER;
             TP_CTRL_ADDR:
-              axi_bus.RDATA <= { {26{1'b0}}, tp_type_r, {3{1'b0}}, tp_en_gen_r };
+              axi_bus.RDATA <= { tp_blanking_r, tp_num_frames_r, tp_en_gen_r };
             TP_SIZE_ADDR:
               axi_bus.RDATA <= { {5{1'b0}}, tp_height_r, {5{1'b0}}, tp_width_r };
             RX_CTRL_ADDR:
@@ -148,10 +152,11 @@ module video_ctrl_axi #(
 
    // Assign outputs
    // Test Pattern outputs
-   assign tp_en_gen_o = tp_en_gen_r;
-   assign tp_type_o   = tp_type_r;
-   assign tp_width_o  = tp_width_r;
-   assign tp_height_o = tp_height_r;
+   assign tp_en_gen_o     = tp_en_gen_r;
+   assign tp_width_o      = tp_width_r;
+   assign tp_height_o     = tp_height_r;
+   assign tp_num_frames_o = tp_num_frames_r;
+   assign tp_blanking_o   = tp_blanking_r;
 
    assign rx_cfg.rx_enable   = rx_enable;
    assign rx_cfg.pure_bt656  = pure_bt656;

@@ -87,24 +87,16 @@ module video_ctrl_tb
       $display("VDMA status=0x%08x", vdma_status);
       // Set VSIZE=0xA0, HSIZE=0xA4, FRMDLY_STRIDE=0xA8
       // START_ADDRESS from 0xAC - 0xE8
-      axi_vdma_write('hA0, {{19{1'b0}}, v_height, 1'b0});
       axi_vdma_write('hA4, {{20{1'b0}}, v_weight});
-      axi_vdma_write('hA8, {{20{1'b0}}, v_weight});
+      axi_vdma_write('hA8, {{20{1'b0}}, (v_height*v_weight)});
       axi_vdma_write('hAC, 32'h27c0_0000);
       axi_vdma_write('hB0, 32'h28c0_0000);
       axi_vdma_write('hB4, 32'h29c0_0000);
       // What to do with ADDRESS?
       axi_vdma_write('h30, 32'h0001_7013);
-      repeat(200) @(posedge clk);
 
-
-      // set some small frame count and enable test pattern generator
-      //      axi_write('h1C, 32'h0028_0028); // AXI FIFO write set to line * 2
-      axi_write('h08, {{4{1'b1}}, v_height, {4{1'b1}}, v_weight} );
-      axi_write('h04, 32'h0000_0001); // AXI FIFO write set to line * 2
-      axi_sys_write('h18, 32'h8000_0000); // Enable video measurement in sys_ctrl
-
-      repeat(200) @(posedge clk);
+      // VSIZE must be last!
+      axi_vdma_write('hA0, {{20{1'b0}}, v_height});
 
       axi_vdma_read('h30, vdma_status);
       $display("VDMA CTRL (0x30)=0x%08x", vdma_status);
@@ -116,27 +108,33 @@ module video_ctrl_tb
       $display("VDMA FRMDLY_STRIDE (0xA8)=0x%08x", vdma_status);
       axi_vdma_read('h34, vdma_status);
       $display("VDMA status=0x%08x", vdma_status);
+      axi_vdma_read('hF0, vdma_status);
+      $display("VDMA HSIZE_STAT (0xF0)=0x%08x", vdma_status);
+      axi_vdma_read('hF4, vdma_status);
+      $display("VDMA VSIZE_STAT (0xF4)=0x%08x", vdma_status);
 
+      // set some small frame count and enable test pattern generator
+      //      axi_write('h1C, 32'h0028_0028); // AXI FIFO write set to line * 2
+      axi_write('h08, {{4{1'b0}}, v_height, {4{1'b0}}, v_weight} );
+      axi_write('h04, 32'h000a_005); // AXI FIFO write set to line * 2
+      axi_sys_write('h18, 32'h8000_0000); // Enable video measurement in sys_ctrl
 
-//      axi_write('h0C, { {30{1'b0}}, pure_bt656, 1'b1 }); // Enable receiver
-//      axi_write('h04, 32'h0000_0001); // Enable pattern generation
-//      repeat(500) @(posedge clk);
-      repeat(100) @(posedge clk);
+      @(posedge axi_vdma_introut)
+        begin
+           axi_vdma_read('h34, vdma_status);
+           $display("Interrupt detected: 0x%08x", vdma_status);
+//           axi_vdma_write('h34, vdma_status); // clear it
+//           axi_vdma_read('h30, vdma_status);
+//           axi_vdma_write('h30, {vdma_status[31:1], 1'b1}); // re-enable it
+//           // VSIZE must be last!
+//           axi_vdma_write('hA0, {{20{1'b0}}, v_height});
+        end
 
       axi_sys_read('h18, video_meas1);
       axi_sys_read('h1C, video_meas2);
       $display("Video measurement 0x%08x 0x%08x", video_meas1, video_meas2);
 
-      axi_vdma_read('h30, vdma_status);
-      $display("VDMA ctrl=0x%08x", vdma_status);      axi_vdma_read('hA0, vdma_status);
-      $display("VDMA VSIZE (0xA0)=0x%08x", vdma_status);
-      axi_vdma_read('hA4, vdma_status);
-      $display("VDMA HSIZE (0xA4)=0x%08x", vdma_status);
-      axi_vdma_read('hA8, vdma_status);
-      $display("VDMA FRMDLY_STRIDE (0xA8)=0x%08x", vdma_status);
-      axi_vdma_read('h34, vdma_status);
-      $display("VDMA status=0x%08x", vdma_status);
-
+      repeat(400) @(posedge clk);
       $finish();
    end
 

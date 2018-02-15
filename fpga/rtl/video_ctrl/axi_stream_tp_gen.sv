@@ -5,9 +5,10 @@ module axi_stream_tp_gen
    axi4_stream_if.s axi_stream_o,
 
    input logic        tp_enable_i,
-   input logic  [1:0] tp_type_i,
    input logic [10:0] tp_width_i,
-   input logic [10:0] tp_height_i
+   input logic [10:0] tp_height_i,
+   input logic [6:0]  tp_num_frames_i,
+   input logic [23:0] tp_blanking_i
    );
 
    logic              clk, rstn;
@@ -17,73 +18,49 @@ module axi_stream_tp_gen
 
    // Registers of configuration (updated only when started)
    logic [2:0]        enable_r;
-   logic [1:0]        type_r;
    logic [10:0]       width_r, height_r;
+   logic [6:0]        num_frames_r;
+   logic [23:0]       blanking_r;
 
-   logic              gen_start, gen_end;
-   logic              gen_start_d, gen_end_d;
-   logic              gen_cnts_on; // counters running
+   logic              gen_start;
 
    // Register input configuration & start/stop request detection
    assign gen_start = !enable_r[2] && enable_r[1];
-   assign gen_end   = enable_r[2] && !enable_r[1];
 
    always_ff @(posedge clk)
      if (!rstn)
        begin
           // '0 operation is available in SystemVerilog yeee :)
           enable_r      <= '0;
-          type_r        <= '0;
           width_r       <= '0;
           height_r      <= '0;
-          gen_start_d   <= '0;
-          gen_cnts_on   <= '0;
+          num_frames_r  <= '0;
+          blanking_r    <= '0;
        end
      else
        begin
           enable_r    <= {enable_r[1:0], tp_enable_i};
-          gen_start_d <= gen_start;
-          gen_end_d   <= gen_end_d;
 
           // Register new configuration only when new generation of data is
-          //  requested
+          // requested
           if(gen_start)
             begin
-               type_r        <= tp_type_i;
-               width_r       <= tp_width_i;
-               height_r      <= tp_height_i;
-               gen_cnts_on   <= 1'b1;
+               width_r         <= tp_width_i;
+               height_r        <= tp_height_i;
+               num_frames_r    <= tp_num_frames_i;
+               blanking_r      <= tp_blanking_i;
+
             end
-          if(gen_end)
-            gen_cnts_on      <= 1'b0;
        end // else: !if(rstn)
 
    // counters
    logic [7:0]  frame_cnt;
-   logic [10:0] pixel_cnt; // pixels in line
+   logic [23:0] pixel_cnt; // pixels in line
    logic [10:0] line_cnt;
-   logic [15:0] free_cnt;
-   logic        new_frame, new_frame_d;
-   logic        new_line;
-   logic        pause_pixel_cnt, pause_pixel_cnt_d;
-
-   // more elegant way to do this?
-   assign new_frame = gen_start || ((line_cnt == (height_r-1)) && new_line);
-   assign new_line = ((pixel_cnt == (width_r-1)) && enable_r[2]);
-
-   // TODO: This bug still exists - below 'the complicated fix' is commented out
-   // with JJJ_TREADY
-   // Dangerous situation - if we get TREADY=0 just when pixel_cnt is at the end
-   // is very tricky situation - TLAST would be asserted for one clock cycle when
-   // TREADY is low. We need to detect when TREADY goes low and freeze all output
-   // changes until it's re-asserted. pixel_cnt is taken care of so it is freezed
-   // More critical is the handling of AXI4-Stream output where we need to store
-   // intermediate data (see below).
-   // Need more testing.
-   // Potentially the TVALID (with gen_start_d & gen_end_d) is still a problem.
-   // But I think not critical because gen_end_d happens when we disable the
-   // generator and should not produce anything.
-   assign pause_pixel_cnt = !axi_stream_o.TREADY;
+   logic        inc_frame_cnt, rst_frame_cnt;
+   logic        inc_pixel_cnt, rst_pixel_cnt;
+   logic        inc_line_cnt, rst_line_cnt;
+   logic        data_valid_out;
 
    always_ff @(posedge clk)
      if(!rstn)
@@ -91,117 +68,129 @@ module axi_stream_tp_gen
           frame_cnt   <= '0;
           pixel_cnt   <= '0;
           line_cnt    <= '0;
-          free_cnt    <= '0;
-          new_frame_d <= '0;
        end
      else
        begin
-          pause_pixel_cnt_d <= pause_pixel_cnt;
-          if(!gen_cnts_on)
-            begin
-               frame_cnt <= '0;
-               pixel_cnt <= '0;
-               line_cnt <= '0;
-            end
-          else
-            begin
-               if(new_frame)
-                 frame_cnt   <= frame_cnt + 1;
+          if(rst_frame_cnt)
+            frame_cnt <= '0;
+          else if(inc_frame_cnt)
+            frame_cnt   <= frame_cnt + 1;
 
-               if(new_line)
-                 pixel_cnt   <= '0;
-//JJJ_TREADY               else if(!pause_pixel_cnt && !pause_pixel_cnt_d)
-               else if(!pause_pixel_cnt && !pause_pixel_cnt_d)
-                 pixel_cnt <= pixel_cnt + 1;
+          if(rst_pixel_cnt)
+            pixel_cnt   <= '0;
+          else if(inc_pixel_cnt)
+            pixel_cnt <= pixel_cnt + 1;
 
-               if(new_frame)
-                 line_cnt <= '0;
-               else if(new_line)
-                 line_cnt <= line_cnt + 1;
-            end // else: !if(gen_cnts_on)
-          free_cnt <= free_cnt + 1;
-          new_frame_d <= new_frame;
-       end // else: !if(!rstn || !tp_enable_i)
+          if(rst_line_cnt)
+            line_cnt <= '0;
+          else if(inc_line_cnt)
+            line_cnt <= line_cnt + 1;
+       end // else: !if(!rstn)
 
-//JJJ_TREADY   // AXI4-Stream frame generation
-//JJJ_TREADY   logic freeze_output;
-//JJJ_TREADY   logic [31:0] f_tdata;
-//JJJ_TREADY   logic        f_new_frame_d;
-//JJJ_TREADY   logic        f_new_line;
+      // state machine signals
+   enum logic [2:0]
+        {
+         FSM_IDLE     = 3'b000,
+         FSM_BLANKING = 3'b001,
+         FSM_VDATA    = 3'b011
+         } state, nstate;
 
    always_ff @(posedge clk)
-     if(!rstn || !tp_enable_i)
+     if(!rstn)
        begin
-          axi_stream_o.TDATA  <= '0;
-          axi_stream_o.TVALID <= '0;
-          axi_stream_o.TUSER  <= '0;
-          axi_stream_o.TLAST  <= '0;
-          // Unused signal:
-          axi_stream_o.TKEEP <= '1;
-//JJJ_TREADY          freeze_output <= 1'b0;
-//JJJ_TREADY          f_tdata <= '0;
-//JJJ_TREADY          f_new_frame_d <= '0;
-//JJJ_TREADY          f_new_line <= '0;
+          state <= FSM_IDLE;
        end
      else
        begin
-//JJJ_TREADY          if(!axi_stream_o.TREADY && !freeze_output)
-//JJJ_TREADY            begin
-//JJJ_TREADY               // we are going into the 'output freeze' mode - let's store
-//JJJ_TREADY               // what should we output next
-//JJJ_TREADY               f_tdata       <=  { free_cnt[7:0], frame_cnt[7:0],
-//JJJ_TREADY                                   pixel_cnt[7:0], line_cnt[7:0] };
-//JJJ_TREADY               f_new_frame_d <= new_frame_d;
-//JJJ_TREADY               f_new_line    <= new_line;
-//JJJ_TREADY               freeze_output = 1'b1;
-//JJJ_TREADY            end
-//JJJ_TREADY          else if(axi_stream_o.TREADY && freeze_output)
-//JJJ_TREADY            begin
-//JJJ_TREADY               freeze_output = 1'b0;
-//JJJ_TREADY               // depends on the type I guess - for now hard-coded
-//JJJ_TREADY               // Assuming TDATA = 32 bit!
-//JJJ_TREADY               axi_stream_o.TDATA <= f_tdata;
-//JJJ_TREADY
-//JJJ_TREADY               // or'ing gen_start_d takes care of first SoF when TP is enabled
-//JJJ_TREADY               if(f_new_frame_d)
-//JJJ_TREADY                 axi_stream_o.TUSER[0] <= 1'b1;
-//JJJ_TREADY               else
-//JJJ_TREADY                 axi_stream_o.TUSER[0] <= 1'b0;
-//JJJ_TREADY
-//JJJ_TREADY               if(f_new_line)
-//JJJ_TREADY                 axi_stream_o.TLAST    <= 1'b1;
-//JJJ_TREADY               else
-//JJJ_TREADY                 axi_stream_o.TLAST    <= 1'b0;
-//JJJ_TREADY            end // if (axi_stream_o.TREADY && freeze_output)
-//JJJ_TREADY          else if(!axi_stream_o.TREADY && freeze_output)
-//JJJ_TREADY            begin
-//JJJ_TREADY               // pass through without changes
-//JJJ_TREADY            end
-//JJJ_TREADY          else
-            begin
-               // depends on the type I guess - for now hard-coded
-               // Assuming TDATA = 32 bit!
-//               axi_stream_o.TDATA <= { free_cnt[7:0], frame_cnt[7:0],
-//                                       pixel_cnt[7:0], line_cnt[7:0] };
-
-               // Assuming TDATA = 8 bit!
-               axi_stream_o.TDATA <= pixel_cnt[7:0];
-
-               if(gen_start_d)
-                 axi_stream_o.TVALID <= 1'b1;
-               else if(gen_end_d)
-                 axi_stream_o.TVALID <= 1'b0;
-
-               // or'ing gen_start_d takes care of first SoF when TP is enabled
-               if(new_frame_d)
-                 axi_stream_o.TUSER[0] <= 1'b1;
-               else
-                 axi_stream_o.TUSER[0] <= 1'b0;
-
-               if(new_line)
-                 axi_stream_o.TLAST    <= 1'b1;
-               else
-                 axi_stream_o.TLAST    <= 1'b0;
-            end // else: !if(axi_stream_o.TREADY && freeze_output)
+          state <= nstate;
        end
+
+//   always_ff @(posedge clk)
+//     if(!rstn)
+//       begin
+//          axi_stream_o.TDATA = '0;
+//       end
+//     else
+//       begin
+//          if(data_valid_out == 1'b1)
+//            begin
+//               axi_stream_o.TDATA = pixel_cnt[7:0];
+//            end
+//       end
+   assign axi_stream_o.TDATA = (data_valid_out == 1'b1) ? { line_cnt[3:0], pixel_cnt[3:0] } : 'x;
+
+   always_comb
+     begin
+        nstate = state;
+
+        axi_stream_o.TVALID = 1'b0;
+        axi_stream_o.TUSER  =   '0;
+        axi_stream_o.TLAST  = 1'b0;
+        axi_stream_o.TKEEP  =   '1;
+
+        inc_frame_cnt  = 1'b0;
+        rst_pixel_cnt  = 1'b0;
+        inc_pixel_cnt  = 1'b0;
+        rst_line_cnt   = 1'b0;
+        inc_line_cnt   = 1'b0;
+        data_valid_out = 1'b0;
+        rst_frame_cnt  = 1'b0;
+
+        case(state)
+          FSM_IDLE:
+            begin
+               rst_frame_cnt = 1'b1;
+               if(gen_start)
+                 begin
+                    nstate = FSM_VDATA;
+                 end
+            end
+          FSM_BLANKING:
+            begin
+               // wait one line here before continue with another
+               // frame (this should be programmable)
+               inc_pixel_cnt = 1'b1;
+               if((enable_r[0] == 1'b0) ||
+                  ((frame_cnt >= num_frames_r) && (num_frames_r > 0)))
+                 begin
+                    nstate = FSM_IDLE;
+                 end
+
+               if(pixel_cnt >= blanking_r)
+                 begin
+                    rst_pixel_cnt = 1'b1;
+                    nstate = FSM_VDATA;
+                 end
+            end
+          FSM_VDATA:
+            begin
+               axi_stream_o.TVALID = 1'b1;
+               data_valid_out = 1'b1;
+//               if(axi_stream_o.TREADY)
+               if(1'b1)
+                 begin
+                    inc_pixel_cnt = 1'b1;
+
+                    if((pixel_cnt == 0) && (line_cnt == 0))
+                      axi_stream_o.TUSER[0] = 1'b1;
+
+                    if(pixel_cnt == (width_r-1))
+                      begin
+                         axi_stream_o.TLAST = 1'b1;
+                         inc_line_cnt = 1'b1;
+                         rst_pixel_cnt = 1'b1;
+                      end
+
+                    if((pixel_cnt == (width_r-1)) && (line_cnt == (height_r-1)))
+                      begin
+                         inc_frame_cnt = 1'b1;
+                         rst_line_cnt  = 1'b1;
+                         rst_pixel_cnt = 1'b1;
+                         nstate = FSM_BLANKING;
+                      end
+                 end
+            end
+        endcase; // case (state)
+     end // always_comb
+
 endmodule: axi_stream_tp_gen

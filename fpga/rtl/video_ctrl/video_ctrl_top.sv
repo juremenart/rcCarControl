@@ -17,8 +17,9 @@ module video_ctrl_top #(
 
    // TODO: Put TP to interface type
    logic        tp_gen_en;
-   logic [1:0]  tp_type;
    logic [10:0] tp_width, tp_height;
+   logic [6:0]  tp_num_frames;
+   logic [23:0] tp_blanking;
 
    rx_cfg_if    rx_cfg();
 
@@ -33,9 +34,10 @@ module video_ctrl_top #(
 
 
       .tp_en_gen_o(tp_gen_en),
-      .tp_type_o(tp_type),
       .tp_width_o(tp_width),
       .tp_height_o(tp_height),
+      .tp_num_frames_o(tp_num_frames),
+      .tp_blanking_o(tp_blanking),
 
       // Receiver / bt656_to_axi_stream configuration
       .rx_cfg(rx_cfg)
@@ -57,9 +59,10 @@ module video_ctrl_top #(
       .axi_stream_o(tp_stream),
 
       .tp_enable_i(tp_gen_en),
-      .tp_type_i(tp_type),
       .tp_width_i(tp_width),
-      .tp_height_i(tp_height));
+      .tp_height_i(tp_height),
+      .tp_num_frames_i(tp_num_frames),
+      .tp_blanking_i(tp_blanking));
 
    axi_stream_mux axi_stream_mux_i
      (

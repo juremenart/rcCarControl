@@ -1,7 +1,7 @@
 //Copyright 1986-2017 Xilinx, Inc. All Rights Reserved.
 //--------------------------------------------------------------------------------
 //Tool Version: Vivado v.2017.3 (lin64) Build 2018833 Wed Oct  4 19:58:07 MDT 2017
-//Date        : Fri Jan 19 09:03:11 2018
+//Date        : Thu Feb 15 08:02:44 2018
 //Host        : menart-VirtualBox running 64-bit Ubuntu 17.10
 //Command     : generate_target bd_system_wrapper.bd
 //Design      : bd_system_wrapper
@@ -87,8 +87,6 @@ module bd_system_wrapper
     S_AXI_HP0_FIFO_CTRL_0_wacount,
     S_AXI_HP0_FIFO_CTRL_0_wcount,
     S_AXI_HP0_FIFO_CTRL_0_wrissuecapen,
-    pwm0,
-    pwm1,
     s_axis_s2mm_aclk_0);
   inout [14:0]DDR_addr;
   inout [2:0]DDR_ba;
@@ -155,8 +153,8 @@ module bd_system_wrapper
   input [0:0]M02_AXI_0_wready;
   output [3:0]M02_AXI_0_wstrb;
   output [0:0]M02_AXI_0_wvalid;
-  input [31:0]S_AXIS_S2MM_0_tdata;
-  input [3:0]S_AXIS_S2MM_0_tkeep;
+  input [7:0]S_AXIS_S2MM_0_tdata;
+  input [0:0]S_AXIS_S2MM_0_tkeep;
   input S_AXIS_S2MM_0_tlast;
   output S_AXIS_S2MM_0_tready;
   input [0:0]S_AXIS_S2MM_0_tuser;
@@ -167,8 +165,6 @@ module bd_system_wrapper
   output [5:0]S_AXI_HP0_FIFO_CTRL_0_wacount;
   output [7:0]S_AXI_HP0_FIFO_CTRL_0_wcount;
   input S_AXI_HP0_FIFO_CTRL_0_wrissuecapen;
-  output pwm0;
-  output pwm1;
   input s_axis_s2mm_aclk_0;
 
   wire [14:0]DDR_addr;
@@ -242,8 +238,8 @@ module bd_system_wrapper
   wire [0:0]M02_AXI_0_wready;
   wire [3:0]M02_AXI_0_wstrb;
   wire [0:0]M02_AXI_0_wvalid;
-  wire [31:0]S_AXIS_S2MM_0_tdata;
-  wire [3:0]S_AXIS_S2MM_0_tkeep;
+  wire [7:0]S_AXIS_S2MM_0_tdata;
+  wire [0:0]S_AXIS_S2MM_0_tkeep;
   wire S_AXIS_S2MM_0_tlast;
   wire S_AXIS_S2MM_0_tready;
   wire [0:0]S_AXIS_S2MM_0_tuser;
@@ -254,8 +250,6 @@ module bd_system_wrapper
   wire [5:0]S_AXI_HP0_FIFO_CTRL_0_wacount;
   wire [7:0]S_AXI_HP0_FIFO_CTRL_0_wcount;
   wire S_AXI_HP0_FIFO_CTRL_0_wrissuecapen;
-  wire pwm0;
-  wire pwm1;
   wire s_axis_s2mm_aclk_0;
 
   IOBUF IIC_0_0_scl_iobuf
@@ -350,7 +344,5 @@ module bd_system_wrapper
         .S_AXI_HP0_FIFO_CTRL_0_wacount(S_AXI_HP0_FIFO_CTRL_0_wacount),
         .S_AXI_HP0_FIFO_CTRL_0_wcount(S_AXI_HP0_FIFO_CTRL_0_wcount),
         .S_AXI_HP0_FIFO_CTRL_0_wrissuecapen(S_AXI_HP0_FIFO_CTRL_0_wrissuecapen),
-        .pwm0(pwm0),
-        .pwm1(pwm1),
         .s_axis_s2mm_aclk_0(s_axis_s2mm_aclk_0));
 endmodule

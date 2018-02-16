@@ -41,10 +41,10 @@ if { [string first $scripts_vivado_version $current_vivado_version] == -1 } {
 # project, but make sure you do not have an existing project
 # <./myproj/project_1.xpr> in the current working folder.
 
-set list_projs [get_projects -quiet]
-if { $list_projs eq "" } {
-   create_project project_1 myproj -part xc7z020clg400-3
-}
+#set list_projs [get_projects -quiet]
+#if { $list_projs eq "" } {
+#   create_project rcCarControl rcCarControl -part xc7z020clg400-3
+#}
 
 
 # CHANGE DESIGN NAME HERE

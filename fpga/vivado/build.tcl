@@ -136,6 +136,15 @@ create_project ${project_name} ${origin_dir}/${project_name} -part xc7z020clg400
 # Set the directory path for the new project
 set proj_dir [get_property directory [current_project]]
 
+# Adding sources referenced in BDs, if not already added
+source ${origin_dir}/bd_system.tcl
+
+set design_name [get_bd_designs]
+
+make_wrapper -files [get_files $design_name.bd] -top -import
+
+
+
 # Reconstruct message rules
 # None
 
@@ -276,7 +285,7 @@ add_files -norecurse -fileset $obj $files
 
 # Import local files from the original project
 set files [list \
- "[file normalize "$origin_dir/rcCarControl.srcs/sources_1/bd/bd_system/ip/bd_system_axi_vdma_0_0/sim/bd_system_axi_vdma_0_0.vhd"]"\
+ "[file normalize "$origin_dir/../tb/bd_system_axi_vdma_0_0.vhd"]"\
 ]
 set imported_files [import_files -fileset sim_video_ctrl $files]
 
@@ -337,12 +346,6 @@ set file_obj [get_files -of_objects [get_filesets sim_video_ctrl] [list "*$file"
 set_property -name "file_type" -value "SystemVerilog" -objects $file_obj
 
 
-# Set 'sim_video_ctrl' fileset file properties for local files
-set file "sim/bd_system_axi_vdma_0_0.vhd"
-set file_obj [get_files -of_objects [get_filesets sim_video_ctrl] [list "*$file"]]
-set_property -name "file_type" -value "VHDL" -objects $file_obj
-
-
 # Set 'sim_video_ctrl' fileset properties
 set obj [get_filesets sim_video_ctrl]
 set_property -name "top" -value "video_ctrl_tb" -objects $obj
@@ -378,14 +381,6 @@ set_property -name "file_type" -value "SystemVerilog" -objects $file_obj
 # Set 'sim_bt656_in' fileset properties
 set obj [get_filesets sim_bt656_in]
 set_property -name "top" -value "bd_system_wrapper" -objects $obj
-
-
-# Adding sources referenced in BDs, if not already added
-source ${origin_dir}/bd_system.tcl
-
-set design_name [get_bd_designs]
-
-make_wrapper -files [get_files $design_name.bd] -top -import
 
 
 # Proc to create BD bd_system

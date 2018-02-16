@@ -105,18 +105,6 @@ module axi_stream_tp_gen
           state <= nstate;
        end
 
-//   always_ff @(posedge clk)
-//     if(!rstn)
-//       begin
-//          axi_stream_o.TDATA = '0;
-//       end
-//     else
-//       begin
-//          if(data_valid_out == 1'b1)
-//            begin
-//               axi_stream_o.TDATA = pixel_cnt[7:0];
-//            end
-//       end
    assign axi_stream_o.TDATA = (data_valid_out == 1'b1) ? { line_cnt[3:0], pixel_cnt[3:0] } : 'x;
 
    always_comb
@@ -150,6 +138,7 @@ module axi_stream_tp_gen
                // wait one line here before continue with another
                // frame (this should be programmable)
                inc_pixel_cnt = 1'b1;
+
                if((enable_r[0] == 1'b0) ||
                   ((frame_cnt >= num_frames_r) && (num_frames_r > 0)))
                  begin
@@ -166,8 +155,7 @@ module axi_stream_tp_gen
             begin
                axi_stream_o.TVALID = 1'b1;
                data_valid_out = 1'b1;
-//               if(axi_stream_o.TREADY)
-               if(1'b1)
+               if(axi_stream_o.TREADY)
                  begin
                     inc_pixel_cnt = 1'b1;
 

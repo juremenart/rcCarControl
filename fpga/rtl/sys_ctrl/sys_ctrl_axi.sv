@@ -68,6 +68,7 @@ module sys_ctrl_axi #(
      if (axi_bus.ARESETn == 1'b0)
        begin
           pwm_mux_sel <= 1'b0;
+          video_meas_en <= 1'b0;
        end
      else if (slv_reg_wren)
        begin
@@ -110,8 +111,8 @@ module sys_ctrl_axi #(
             PWM_ACTIVE_1:
               axi_bus.RDATA <= { {(32-PWM_CNT_WIDTH){1'b0}}, pwm_active_1 };
             VID_CTRL_STATUS:
-              axi_bus.RDATA <= { video_meas_en, {3{1'b1}},
-                                 video_lines_cnt_i, {4{1'b1}},
+              axi_bus.RDATA <= { video_meas_en, {3{1'b0}},
+                                 video_lines_cnt_i, {4{1'b0}},
                                  video_pixel_cnt_i };
             VID_FRM_STATUS:
               axi_bus.RDATA <= { video_frames_cnt_i, video_frame_len_i };

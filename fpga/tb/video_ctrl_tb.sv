@@ -65,11 +65,14 @@ module video_ctrl_tb
    logic [32-1:0] video_meas1, video_meas2;
    logic [32-1:0] vdma_status, vdma_version;
 
-   logic [11:0]   v_height;
-   logic [11:0]   v_weight;
+   // BE CAREFUL: Should match the size coming from bt656_stream_gen if not using
+   // internal VIDEO_CTRL TP generator (bt656_stream_gen is not very programmable
+   // from outside - it has this fancy array of blanking dpeending on hblank/pixels/lines/...
+   logic [11:0] sim_height = 16;
+   logic [11:0] sim_weight = 24;
+   parameter sim_num_frames = 16;
 
-   assign v_height = 12'h00a;
-   assign v_weight = 12'h010;
+   logic        use_tp_gen = 0;
 
    initial begin
       repeat(20) @(posedge clk);
@@ -77,26 +80,47 @@ module video_ctrl_tb
       axi_read('h00, ver);
       $display("Video controller version = 0x%08x", ver);
 
-      axi_vdma_write('h30, {{29{1'b0}}, 1'b1, 2'b00}); // VDMA reset
-
-      repeat(40) @(posedge clk);
-      // First set VDMA
       axi_vdma_read('h2C, vdma_version);
       $display("VDMA version=0x%08x", vdma_version);
-      axi_vdma_read('h34, vdma_status);
-      $display("VDMA status=0x%08x", vdma_status);
-      // Set VSIZE=0xA0, HSIZE=0xA4, FRMDLY_STRIDE=0xA8
+
+      // Reset VDMA S2MM engine (and wait for it to be released)
+      axi_vdma_write('h30, {{29{1'b0}}, 1'b1, 2'b00}); // VDMA reset
+
+      do
+        begin
+           axi_vdma_read('h30, vdma_status);
+        end
+      while(vdma_status & 4);
+
+      // Clear potential error bits
+      axi_vdma_write('h34, 0);
+
+      // Start the engine and wait for stat bit to be asserted
+      axi_vdma_write('h30, { {8{1'b0}}, sim_num_frames, 16'h7013 });
+
+      do
+        begin
+           axi_vdma_read('h34, vdma_status);
+        end
+      while(vdma_status & 1); // HALT goes low in STATUS_REG
+
+      // REG_INDEX - write 0
+      axi_vdma_write('h44, 0);
+
       // START_ADDRESS from 0xAC - 0xE8
-      axi_vdma_write('hA4, {{20{1'b0}}, v_weight});
-      axi_vdma_write('hA8, {{20{1'b0}}, (v_height*v_weight)});
       axi_vdma_write('hAC, 32'h27c0_0000);
       axi_vdma_write('hB0, 32'h28c0_0000);
       axi_vdma_write('hB4, 32'h29c0_0000);
-      // What to do with ADDRESS?
-      axi_vdma_write('h30, 32'h0001_7013);
+
+      // PART_PTR
+      axi_vdma_write('h28, 0);
+
+      // HSIZE=0xA4, FRMDLY_STRIDE=0xA8
+      axi_vdma_write('hA8, {{20{1'b0}}, sim_weight[10:0], 1'b0}); // weight * 2 (2 bytes for pixel)
+      axi_vdma_write('hA4, {{20{1'b0}}, sim_weight[10:0], 1'b0}); // weight * 2 (2 bytes for pixel)
 
       // VSIZE must be last!
-      axi_vdma_write('hA0, {{20{1'b0}}, v_height});
+      axi_vdma_write('hA0, {{20{1'b0}}, sim_height});
 
       axi_vdma_read('h30, vdma_status);
       $display("VDMA CTRL (0x30)=0x%08x", vdma_status);
@@ -108,33 +132,40 @@ module video_ctrl_tb
       $display("VDMA FRMDLY_STRIDE (0xA8)=0x%08x", vdma_status);
       axi_vdma_read('h34, vdma_status);
       $display("VDMA status=0x%08x", vdma_status);
-      axi_vdma_read('hF0, vdma_status);
-      $display("VDMA HSIZE_STAT (0xF0)=0x%08x", vdma_status);
-      axi_vdma_read('hF4, vdma_status);
-      $display("VDMA VSIZE_STAT (0xF4)=0x%08x", vdma_status);
 
-      // set some small frame count and enable test pattern generator
-      //      axi_write('h1C, 32'h0028_0028); // AXI FIFO write set to line * 2
-      axi_write('h08, {{4{1'b0}}, v_height, {4{1'b0}}, v_weight} );
-      axi_write('h04, 32'h000a_005); // AXI FIFO write set to line * 2
+
+      // Enable also source of the video streaming
+      if(use_tp_gen == 1'b1)
+        begin
+           // VIDEO_CTRL Test pattern generator
+           axi_write('h08, {{4{1'b0}}, sim_height, {3{1'b0}}, sim_weight[10:0], 1'b0} );
+           axi_write('h04, 32'h0010_001); // AXI FIFO write set to line * 2
+        end
+      else
+        begin
+           // BT656 to Stream module
+           axi_write('h1C, { {5{1'b0}}, sim_weight, {5{1'b0}}, sim_weight[10:0], 1'b0 } );
+           axi_write('h0C, 32'h0000_0005);
+        end
+
       axi_sys_write('h18, 32'h8000_0000); // Enable video measurement in sys_ctrl
 
       @(posedge axi_vdma_introut)
         begin
            axi_vdma_read('h34, vdma_status);
            $display("Interrupt detected: 0x%08x", vdma_status);
-//           axi_vdma_write('h34, vdma_status); // clear it
-//           axi_vdma_read('h30, vdma_status);
-//           axi_vdma_write('h30, {vdma_status[31:1], 1'b1}); // re-enable it
-//           // VSIZE must be last!
-//           axi_vdma_write('hA0, {{20{1'b0}}, v_height});
-        end
+        end // do begin
 
       axi_sys_read('h18, video_meas1);
       axi_sys_read('h1C, video_meas2);
-      $display("Video measurement 0x%08x 0x%08x", video_meas1, video_meas2);
+      $display("SYS Video measurement 0x%08x 0x%08x", video_meas1, video_meas2);
 
-      repeat(400) @(posedge clk);
+
+      axi_read('h14, video_meas1);
+      axi_read('h18, video_meas2);
+      $display("VIDEO_CTRL measurement 0x%08x 0x%08x", video_meas1, video_meas2);
+
+
       $finish();
    end
 
@@ -256,7 +287,7 @@ module video_ctrl_tb
    axi4_lite_if axi4_sys_lite (.ACLK (clk), .ARESETn (rstn));
    axi4_lite_if axi4_vdma_lite (.ACLK (clk), .ARESETn (rstn));
 
-   axi4_stream_if video_stream (.ACLK(s_clk), .ARESETn(s_rstn));
+   axi4_stream_if #(.DW(8)) video_stream (.ACLK(s_clk), .ARESETn(s_rstn));
    bt656_stream_if bt656_stream();
 
    axi4_lite_master bus_master (.intf (axi4_lite));
@@ -285,6 +316,9 @@ module video_ctrl_tb
       .pure_bt656_i(pure_bt656));
 
 
+   // 'modeled'
+   logic                                m_axi_s2mm_bvalid;
+   logic                                m_axi_s2mm_wlast;
    bd_system_axi_vdma_0_0 axi_vdma_i
      (.s_axi_lite_aclk(axi4_vdma_lite.ACLK),
       .m_axi_s2mm_aclk(video_stream.ACLK),
@@ -326,14 +360,24 @@ module video_ctrl_tb
       .m_axi_s2mm_awready(1'b1), // JJJ - be always ready
       .m_axi_s2mm_wdata(), // JJJ
       .m_axi_s2mm_wstrb(), // JJJ
-      .m_axi_s2mm_wlast(), // JJJ
+      .m_axi_s2mm_wlast(m_axi_s2mm_wlast), // JJJ
       .m_axi_s2mm_wvalid(), // JJJ
       .m_axi_s2mm_wready(1'b1), // JJJ
       .m_axi_s2mm_bresp(2'b00), // JJJ
-      .m_axi_s2mm_bvalid(1'b0), // JJJ
+      .m_axi_s2mm_bvalid(m_axi_s2mm_bvalid), // JJJ
       .m_axi_s2mm_bready());
 
-
+   // BVALID = WLAST delayed for one clock cycle - seems to work (I know not real
+   // interface verification :) )
+   always_ff @(posedge axi4_vdma_lite.ACLK)
+        if(!axi4_vdma_lite.ARESETn)
+          begin
+             m_axi_s2mm_bvalid = '0;
+          end
+        else
+          begin
+             m_axi_s2mm_bvalid = m_axi_s2mm_wlast;
+          end
       ////////////////////////////////////////////////////////////////////////////////
    // waveforms
    ////////////////////////////////////////////////////////////////////////////////

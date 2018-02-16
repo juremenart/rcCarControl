@@ -14,6 +14,7 @@ module video_meas
    logic               clk, rstn;
 
    logic               valid_data, sof, eol;
+   logic               tvalid_d, tvalid_update;
 
    logic [7:0] frame_cnt;
    logic [23:0] frame_len;
@@ -30,6 +31,11 @@ module video_meas
 
    assign video_frames_cnt_o = frame_cnt;
 
+   // Update registers also if TVALID goes low (in case of only one
+   // frame for example we never receive new SOF to update last
+   // measurements
+   assign tvalid_update = (tvalid_d && !axi_video_i.TVALID);
+
    always_ff @(posedge clk)
      if(!rstn)
        begin
@@ -41,17 +47,20 @@ module video_meas
           video_lines_cnt_o <= '0;
           video_pixel_cnt_o <= '0;
           video_frame_len_o <= '0;
+
+          tvalid_d <= '0;
        end
      else
        begin
+          tvalid_d <= axi_video_i.TVALID;
           if(video_meas_en_i)
             begin
-               if(valid_data)
+               if(valid_data || tvalid_update)
                  begin
                     pixel_cnt <= pixel_cnt + 1;
                     frame_len <= frame_len + 1;
 
-                    if(sof)
+                    if(sof || tvalid_update)
                       begin
                          frame_cnt         <= frame_cnt + 1;
                          video_frame_len_o <= frame_len;

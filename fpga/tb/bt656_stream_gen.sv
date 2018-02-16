@@ -27,33 +27,33 @@ module bt656_stream_gen
    // But can be reduced for debugigng proposes
    // For nice reference table one can check also: https://www.intersil.com/content/dam/Intersil/documents/an97/an9728.pdf
 
-//   parameter num_hblank = 10;
-//   parameter num_pixels = 20; // number of pixels in line
-//   parameter num_lines = 16;
-//   const line_params_t line_params[7] = {
-//                              //   SL,  EL,  F,  Vs
-//                                {   1,   2,  0,  1 },
-//                                {   3,   6,  0,  0 },
-//                                {   7,   8,  0,  1 },
-//                                {   9,  10,  1,  1 },
-//                                {  11,  14,  1,  0 },
-//                                {  15,  16,  1,  1 },
-//                                {  -1,  -1, -1, -1 } };
+   parameter num_hblank = 10;
+   parameter num_pixels = 24; // number of pixels in line
+   parameter num_lines = 32; // These are ALL! Blanked and normal lines, be careful
+   const line_params_t line_params[7] = {
+                              //   SL,  EL,  F,  Vs
+                                {   1,   4,  0,  1 },
+                                {   5,  12,  0,  0 },
+                                {   13, 16,  0,  1 },
+                                {  17,  20,  1,  1 },
+                                {  21,  28,  1,  0 },
+                                {  29,  32,  1,  1 },
+                                {  -1,  -1, -1, -1 } };
 
 //   // 525/60 Video stream
-   parameter num_hblank = 272;
-   parameter num_pixels = 640;
-   parameter num_lines = 525;
-   // Field & Vertical blanking
-   line_params_t line_params[7] = {
-                              //   SL,  EL,  F,  V
-                                {   1,   3,  1,  1 },
-                                {   4,  20,  0,  1 },
-                                {  21, 263,  0,  0 },
-                                { 264, 265,  0,  1 },
-                                { 266, 282,  1,  1 },
-                                { 283, 525,  1,  0 },
-                                {  -1,  -1, -1, -1 } };
+//   parameter num_hblank = 272;
+//   parameter num_pixels = 640;
+//   parameter num_lines = 525;
+//   // Field & Vertical blanking
+//   line_params_t line_params[7] = {
+//                              //   SL,  EL,  F,  V
+//                                {   1,   3,  1,  1 },
+//                                {   4,  20,  0,  1 },
+//                                {  21, 263,  0,  0 },
+//                                { 264, 265,  0,  1 },
+//                                { 266, 282,  1,  1 },
+//                                { 283, 525,  1,  0 },
+//                                {  -1,  -1, -1, -1 } };
 
 //
 //   // 625/50 Video stream
@@ -285,13 +285,15 @@ module bt656_stream_gen
                  if(hdr_v == 1'b0)
                    dvp_href <= 1'b1;
 
-                 case(pixel_num_lsb[1:0])
-                   0: out_data <= (hdr_v == 1'b1) ? 10'h80 : { hdr_f, 9'b101001011 }; // Cb
-                   1: out_data <= (hdr_v == 1'b1) ? 10'h10 : { pixel_num_lsb[9:0] }; //  Y0
-                   2: out_data <= (hdr_v == 1'b1) ? 10'h80 : { line_num[9:0] }; // Cr
-                   3: out_data <= (hdr_v == 1'b1) ? 10'h10 : { frame_num[9:0] }; //  Y1
-                   default: out_data <= 8'hDE; // should not happen
-                 endcase; // case (pixel_num_lsb[1:0])
+                 out_data <= { line_num[3:0], pixel_num_lsb[3:0] };
+
+//                 case(pixel_num_lsb[1:0])
+//                   0: out_data <= (hdr_v == 1'b1) ? 10'h80 : { hdr_f, 9'b101001011 }; // Cb
+//                   1: out_data <= (hdr_v == 1'b1) ? 10'h10 : { pixel_num_lsb[9:0] }; //  Y0
+//                   2: out_data <= (hdr_v == 1'b1) ? 10'h80 : { line_num[9:0] }; // Cr
+//                   3: out_data <= (hdr_v == 1'b1) ? 10'h10 : { frame_num[9:0] }; //  Y1
+//                   default: out_data <= 8'hDE; // should not happen
+//                 endcase; // case (pixel_num_lsb[1:0])
               end
           endcase; // case state
        end

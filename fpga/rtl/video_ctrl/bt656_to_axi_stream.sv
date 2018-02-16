@@ -45,7 +45,6 @@ module bt656_to_axi_stream
    logic         hdr_det, eav_det, sav_det;
    logic         eav_det_d, sav_det_d;
    logic         in_hblank, in_vblank;
-
    logic         in_vsync_valid;
    logic         in_vsync_field, in_vsync_field_d, in_new_frame;
 
@@ -365,7 +364,7 @@ module bt656_to_axi_stream
    // Current size is 8 x 2048 (should be more then comfortable for 720p - 1280x720
    // resoltuion to store ~1.5 lines)
    // Remember each pixel is actually 16 bit, so two entries
-   logic        data_fifo_empty, data_fifo_empty_d, data_fifo_read, data_fifo_read_d;
+   logic        data_fifo_empty, data_fifo_empty_d, data_fifo_read;
    logic [7:0]  data_fifo_read_data;
    logic [10:0] data_fifo_read_words;
    logic        stream_in_new_frame; // we already have sync_in_new_frame for AXI-Lite :)
@@ -404,9 +403,11 @@ module bt656_to_axi_stream
      if(!rstn)
        begin
           fifo_start_read <= 1'b0;
+          data_fifo_empty_d <= 1'b0;
        end
      else
        begin
+          data_fifo_empty_d <= data_fifo_empty;
           // NOTE: data_fifo_start is in AXI-Lite clock domain but
           // it should be counted as static setting (??) during
           // operation so one can false-path it
@@ -435,12 +436,10 @@ module bt656_to_axi_stream
    enum logic [1:0]
         {
          AXI_FSM_IDLE = 2'b00,
-         AXI_FSM_SOF  = 2'b01,
          AXI_FSM_DATA = 2'b10
          } axi_state, axi_nstate;
 
    logic [10:0] fifo_pixel_cnt;
-   logic        fifo_pixel_cnt_eol;
    logic        rst_fifo_pixel_cnt;
    logic        inc_fifo_pixel_cnt;
 
@@ -465,19 +464,10 @@ module bt656_to_axi_stream
        begin
           axi_state <= AXI_FSM_IDLE;
           fifo_pixel_cnt <= '0;
-          fifo_pixel_cnt_eol <= 1'b0;
-          data_fifo_empty_d  <= 1'b0;
-          data_fifo_read_d   <= 1'b0;
        end
      else
        begin
-          data_fifo_empty_d  <= data_fifo_empty;
-          data_fifo_read_d   <= data_fifo_read;
-
-          if(!rx_cfg.rx_enable)
-            axi_state <= AXI_FSM_IDLE;
-          else
-            axi_state <= axi_nstate;
+          axi_state <= axi_nstate;
 
           if(rst_fifo_pixel_cnt)
             begin
@@ -485,93 +475,140 @@ module bt656_to_axi_stream
             end
           else if(inc_fifo_pixel_cnt)
             begin
-               fifo_pixel_cnt_eol <= 1'b0;
-               if(fifo_pixel_cnt == (rx_cfg.data_fifo_line_len-1))
-                 begin
-                    fifo_pixel_cnt_eol <= 1'b1;
-                    fifo_pixel_cnt <= '0;
-                 end
-               else
-                 fifo_pixel_cnt <= fifo_pixel_cnt + 1;
+               fifo_pixel_cnt <= fifo_pixel_cnt + 1;
             end
        end
 
-   assign axi_stream_o.TDATA = (axi_state != AXI_FSM_IDLE) ? data_fifo_read_data : 'X;
+   logic data_valid_out;
+
+   assign axi_stream_o.TDATA = (data_valid_out) ? data_fifo_read_data : 'X;
 
    always_comb
      begin
-        axi_stream_o.TKEEP    = 1'b1;
-
-        axi_stream_o.TVALID   = 1'b0;
-        axi_stream_o.TUSER[0] = 1'b0;
-        axi_stream_o.TLAST    = 1'b0;
-
         axi_nstate = axi_state;
 
-        data_fifo_read = 1'b1;
-        stream_clear_frame_latch = 1'b0;
+        axi_stream_o.TVALID = 1'b0;
+        axi_stream_o.TUSER  =   '0;
+        axi_stream_o.TLAST  = 1'b0;
+        axi_stream_o.TKEEP  =   '1;
 
-        inc_fifo_pixel_cnt = 1'b0;
-        rst_fifo_pixel_cnt = 1'b0;
+        data_fifo_read = 1'b0;
+        data_valid_out = 1'b0;
+
+        rst_fifo_pixel_cnt  = 1'b0;
+        inc_fifo_pixel_cnt  = 1'b0;
+        stream_clear_frame_latch <= 1'b0;
 
         case(axi_state)
           AXI_FSM_IDLE:
             begin
-               data_fifo_read = 1'b0;
-               rst_fifo_pixel_cnt = 1'b1;
-
                if(fifo_start_read)
                  begin
-                    // Check if it's new frame or just new line
-                    axi_nstate            = AXI_FSM_SOF;
-                    data_fifo_read        = 1'b1;
-                    rst_fifo_pixel_cnt    = 1'b0;
-                    inc_fifo_pixel_cnt    = 1'b1;
-                 end
-            end
-          AXI_FSM_SOF:
-            begin
-               // TODO: Danger is we have FIFO empty at this stage?
-               axi_nstate            = AXI_FSM_DATA;
-               data_fifo_read        = 1'b1;
-               axi_stream_o.TVALID   = 1'b1;
-               inc_fifo_pixel_cnt    = 1'b1;
-
-               if(stream_frame_latch)
-                 begin
-                    axi_stream_o.TUSER[0] = 1'b1;
-                    stream_clear_frame_latch <= 1'b1;
+                    data_fifo_read = 1'b1;
+                    axi_nstate     = AXI_FSM_DATA;
                  end
             end
           AXI_FSM_DATA:
             begin
-               data_fifo_read        = 1'b1;
-               axi_stream_o.TVALID   = 1'b1;
-               inc_fifo_pixel_cnt    = 1'b1;
+               data_valid_out      = 1'b1;
+               if(axi_stream_o.TREADY && !data_fifo_empty_d)
+                 begin
+                    axi_stream_o.TVALID = 1'b1;
+                    data_fifo_read      = 1'b1;
+                    inc_fifo_pixel_cnt  = 1'b1;
 
-               // Always when we restart reading we must wait 1 clock cycle
-               if(!data_fifo_read_d)
-                 begin
-                    inc_fifo_pixel_cnt  = 1'b0;
-                    axi_stream_o.TVALID = 1'b0;
-                 end
+                    if(stream_frame_latch)
+                      begin
+                         axi_stream_o.TUSER[0] = 1'b1;
+                         stream_clear_frame_latch <= 1'b1;
+                      end
 
-               if(fifo_pixel_cnt_eol)
-                 begin
-                    rst_fifo_pixel_cnt  = 1'b1;
-                    data_fifo_read      = 1'b0;
-                    axi_stream_o.TLAST  = 1'b1;
-                    axi_nstate          = AXI_FSM_IDLE;
+                    if(fifo_pixel_cnt == (rx_cfg.data_fifo_line_len-1))
+                      begin
+                         axi_stream_o.TLAST = 1'b1;
+                         rst_fifo_pixel_cnt = 1'b1;
+                         data_fifo_read     = 1'b0;
+                         axi_nstate         = AXI_FSM_IDLE;
+                      end
                  end
-               else if(!axi_stream_o.TREADY || data_fifo_empty_d)
-                 begin
-                    // If not ready wait for bus to become ready
-                    inc_fifo_pixel_cnt  = 1'b0;
-                    data_fifo_read      = 1'b0;
-                    axi_stream_o.TVALID = 1'b0;
-                 end
-               end
-            endcase; // case: AXI_FSM_DATA
-        end // always_comb
+            end
+        endcase; // case (axi_state)
+     end // always_comb
+
+//   always_comb
+//     begin
+//        axi_stream_o.TKEEP    = 1'b1;
+//
+//        axi_stream_o.TVALID   = 1'b0;
+//        axi_stream_o.TUSER[0] = 1'b0;
+//        axi_stream_o.TLAST    = 1'b0;
+//
+//        axi_nstate = axi_state;
+//
+//        data_fifo_read = 1'b1;
+//        stream_clear_frame_latch = 1'b0;
+//
+//        inc_fifo_pixel_cnt = 1'b0;
+//        rst_fifo_pixel_cnt = 1'b0;
+//
+//        case(axi_state)
+//          AXI_FSM_IDLE:
+//            begin
+//               data_fifo_read = 1'b0;
+//               rst_fifo_pixel_cnt = 1'b1;
+//
+//               if(fifo_start_read)
+//                 begin
+//                    // Check if it's new frame or just new line
+//                    axi_nstate            = AXI_FSM_SOF;
+//                    data_fifo_read        = 1'b1;
+//                    rst_fifo_pixel_cnt    = 1'b0;
+//                    inc_fifo_pixel_cnt    = 1'b1;
+//                 end
+//            end
+//          AXI_FSM_SOF:
+//            begin
+//               // TODO: Danger is we have FIFO empty at this stage?
+//               axi_nstate            = AXI_FSM_DATA;
+//               data_fifo_read        = 1'b1;
+//               axi_stream_o.TVALID   = 1'b1;
+//               inc_fifo_pixel_cnt    = 1'b1;
+//
+//               if(stream_frame_latch)
+//                 begin
+//                    axi_stream_o.TUSER[0] = 1'b1;
+//                    stream_clear_frame_latch <= 1'b1;
+//                 end
+//            end
+//          AXI_FSM_DATA:
+//            begin
+//               data_fifo_read        = 1'b1;
+//               axi_stream_o.TVALID   = 1'b1;
+//               inc_fifo_pixel_cnt    = 1'b1;
+//
+//               // Always when we restart reading we must wait 1 clock cycle
+//               if(!data_fifo_read_d)
+//                 begin
+//                    inc_fifo_pixel_cnt  = 1'b0;
+//                    axi_stream_o.TVALID = 1'b0;
+//                 end
+//
+//               if(fifo_pixel_cnt_eol)
+//                 begin
+//                    rst_fifo_pixel_cnt  = 1'b1;
+//                    data_fifo_read      = 1'b0;
+//                    axi_stream_o.TLAST  = 1'b1;
+//                    axi_nstate          = AXI_FSM_IDLE;
+//                 end
+//               else if(!axi_stream_o.TREADY || data_fifo_empty_d)
+//                 begin
+//                    // If not ready wait for bus to become ready
+//                    inc_fifo_pixel_cnt  = 1'b0;
+//                    data_fifo_read      = 1'b0;
+//                    axi_stream_o.TVALID = 1'b0;
+//                 end
+//               end
+//            endcase; // case: AXI_FSM_DATA
+//        end // always_comb
 
 endmodule: bt656_to_axi_stream

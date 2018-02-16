@@ -39,11 +39,11 @@ if { [string first $scripts_vivado_version $current_vivado_version] == -1 } {
 
 # If there is no project opened, this script will create a
 # project, but make sure you do not have an existing project
-# <./rcCarControl/rcCarControl.xpr> in the current working folder.
+# <./myproj/project_1.xpr> in the current working folder.
 
 set list_projs [get_projects -quiet]
 if { $list_projs eq "" } {
-   create_project rcCarControl rcCarControl -part xc7z020clg400-3
+   create_project project_1 myproj -part xc7z020clg400-3
 }
 
 
@@ -224,12 +224,14 @@ proc create_root_design { parentCell } {
    ] $M02_AXI_0
   set S_AXIS_S2MM_0 [ create_bd_intf_port -mode Slave -vlnv xilinx.com:interface:axis_rtl:1.0 S_AXIS_S2MM_0 ]
   set_property -dict [ list \
+   CONFIG.CLK_DOMAIN {bd_system_processing_system7_0_0_FCLK_CLK0} \
+   CONFIG.FREQ_HZ {50000000} \
    CONFIG.HAS_TKEEP {1} \
    CONFIG.HAS_TLAST {1} \
    CONFIG.HAS_TREADY {1} \
    CONFIG.HAS_TSTRB {0} \
    CONFIG.LAYERED_METADATA {undef} \
-   CONFIG.TDATA_NUM_BYTES {4} \
+   CONFIG.TDATA_NUM_BYTES {1} \
    CONFIG.TDEST_WIDTH {0} \
    CONFIG.TID_WIDTH {0} \
    CONFIG.TUSER_WIDTH {1} \
@@ -241,9 +243,11 @@ proc create_root_design { parentCell } {
   set FCLK_CLK1_0 [ create_bd_port -dir O -type clk FCLK_CLK1_0 ]
   set FCLK_RESET0_N [ create_bd_port -dir O -from 0 -to 0 -type rst FCLK_RESET0_N ]
   set FCLK_RESET1_N_0 [ create_bd_port -dir O -type rst FCLK_RESET1_N_0 ]
-  set pwm0 [ create_bd_port -dir O pwm0 ]
-  set pwm1 [ create_bd_port -dir O pwm1 ]
   set s_axis_s2mm_aclk_0 [ create_bd_port -dir I -type clk s_axis_s2mm_aclk_0 ]
+  set_property -dict [ list \
+   CONFIG.CLK_DOMAIN {bd_system_processing_system7_0_0_FCLK_CLK0} \
+   CONFIG.FREQ_HZ {50000000} \
+ ] $s_axis_s2mm_aclk_0
 
   # Create instance: axi_interconnect_0, and set properties
   set axi_interconnect_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_interconnect:2.1 axi_interconnect_0 ]
@@ -260,8 +264,11 @@ proc create_root_design { parentCell } {
   # Create instance: axi_vdma_0, and set properties
   set axi_vdma_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_vdma:6.3 axi_vdma_0 ]
   set_property -dict [ list \
+   CONFIG.c_enable_all {0} \
    CONFIG.c_include_mm2s {0} \
    CONFIG.c_mm2s_genlock_mode {0} \
+   CONFIG.c_num_fstores {3} \
+   CONFIG.c_s2mm_linebuffer_depth {2048} \
  ] $axi_vdma_0
 
   # Create instance: proc_sys_reset_0, and set properties
@@ -1085,7 +1092,7 @@ proc create_root_design { parentCell } {
   connect_bd_net -net processing_system7_0_FCLK_CLK1 [get_bd_ports FCLK_CLK1_0] [get_bd_pins processing_system7_0/FCLK_CLK1]
   connect_bd_net -net processing_system7_0_FCLK_RESET0_N [get_bd_pins proc_sys_reset_0/ext_reset_in] [get_bd_pins processing_system7_0/FCLK_RESET0_N]
   connect_bd_net -net processing_system7_0_FCLK_RESET1_N [get_bd_ports FCLK_RESET1_N_0] [get_bd_pins processing_system7_0/FCLK_RESET1_N]
-  connect_bd_net -net s_axis_s2mm_aclk_0_1 [get_bd_ports s_axis_s2mm_aclk_0] [get_bd_pins axi_vdma_0/s_axis_s2mm_aclk]
+  connect_bd_net -net s_axis_s2mm_aclk_1 [get_bd_ports s_axis_s2mm_aclk_0] [get_bd_pins axi_vdma_0/s_axis_s2mm_aclk]
 
   # Create address segments
   create_bd_addr_seg -range 0x40000000 -offset 0x00000000 [get_bd_addr_spaces axi_vdma_0/Data_S2MM] [get_bd_addr_segs processing_system7_0/S_AXI_HP0/HP0_DDR_LOWOCM] SEG_processing_system7_0_HP0_DDR_LOWOCM

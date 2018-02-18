@@ -153,10 +153,10 @@ module axi_stream_tp_gen
             end
           FSM_VDATA:
             begin
-               axi_stream_o.TVALID = 1'b1;
                data_valid_out = 1'b1;
                if(axi_stream_o.TREADY)
                  begin
+                    axi_stream_o.TVALID = 1'b1;
                     inc_pixel_cnt = 1'b1;
 
                     if((pixel_cnt == 0) && (line_cnt == 0))

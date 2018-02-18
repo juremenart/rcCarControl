@@ -99,7 +99,7 @@ module video_ctrl_tb
       // Start the engine and wait for stat bit to be asserted
 //      axi_vdma_write('h30, { {8{1'b0}}, sim_num_frames, 16'h7013 });
       axi_vdma_write('h28, 32'h0000_0100 );
-      axi_vdma_write('h30, 32'h0001_7013 );
+      axi_vdma_write('h30, 32'h001f_7013 );
 
       do
         begin

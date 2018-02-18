@@ -68,11 +68,12 @@ module video_ctrl_tb
    // BE CAREFUL: Should match the size coming from bt656_stream_gen if not using
    // internal VIDEO_CTRL TP generator (bt656_stream_gen is not very programmable
    // from outside - it has this fancy array of blanking dpeending on hblank/pixels/lines/...
-   logic [11:0] sim_height = 16;
-   logic [11:0] sim_weight = 24;
-   parameter sim_num_frames = 16;
+   logic [11:0] sim_height = 480;
+   logic [11:0] sim_weight = 640;
+   parameter sim_num_frames = 2;
+   logic [23:0] tp_blanking = sim_height * sim_weight * 2;
 
-   logic        use_tp_gen = 0;
+   logic        use_tp_gen = 1;
 
    initial begin
       repeat(20) @(posedge clk);
@@ -96,7 +97,9 @@ module video_ctrl_tb
       axi_vdma_write('h34, 0);
 
       // Start the engine and wait for stat bit to be asserted
-      axi_vdma_write('h30, { {8{1'b0}}, sim_num_frames, 16'h7013 });
+//      axi_vdma_write('h30, { {8{1'b0}}, sim_num_frames, 16'h7013 });
+      axi_vdma_write('h28, 32'h0000_0100 );
+      axi_vdma_write('h30, 32'h0001_7013 );
 
       do
         begin
@@ -133,13 +136,17 @@ module video_ctrl_tb
       axi_vdma_read('h34, vdma_status);
       $display("VDMA status=0x%08x", vdma_status);
 
+      axi_sys_write('h18, 32'h8000_0000); // Enable video measurement in sys_ctrl
 
       // Enable also source of the video streaming
       if(use_tp_gen == 1'b1)
         begin
            // VIDEO_CTRL Test pattern generator
-           axi_write('h08, {{4{1'b0}}, sim_height, {3{1'b0}}, sim_weight[10:0], 1'b0} );
-           axi_write('h04, 32'h0010_001); // AXI FIFO write set to line * 2
+//           axi_write('h08, {{4{1'b0}}, sim_height, {3{1'b0}}, sim_weight[10:0], 1'b0} );
+//           axi_write('h04, { tp_blanking, 8'h01 }); // AXI FIFO write set to line * 2
+           axi_write('h08, 32'h01e0_0500); // AXI FIFO write set to line * 2
+           axi_write('h04, 32'h000a_0007 );
+
         end
       else
         begin
@@ -147,8 +154,6 @@ module video_ctrl_tb
            axi_write('h1C, { {5{1'b0}}, sim_weight, {5{1'b0}}, sim_weight[10:0], 1'b0 } );
            axi_write('h0C, 32'h0000_0005);
         end
-
-      axi_sys_write('h18, 32'h8000_0000); // Enable video measurement in sys_ctrl
 
       @(posedge axi_vdma_introut)
         begin

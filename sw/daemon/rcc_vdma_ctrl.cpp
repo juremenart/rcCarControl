@@ -185,7 +185,7 @@ void rccVdmaCtrl::vdmaStart(void)
 
 bool rccVdmaCtrl::vdmaRunning(void)
 {
-    return(mRegs->s2mmVdmaStat & VDMA_S2MM_DMASR_HALT);
+    return(!(mRegs->s2mmVdmaStat & VDMA_S2MM_DMASR_HALT));
 }
 
 int rccVdmaCtrl::acqNumFrames(int width, int height, int num_frames,
@@ -215,28 +215,32 @@ int rccVdmaCtrl::acqNumFrames(int width, int height, int num_frames,
         virt_addr[i] = NULL;
     }
 
+    std::cout << "acqNumFrames() number of frames: " << num_frames << std::endl;
+
     /* Map all physical addresses */
-    for(int i = 0; i < num_frames; i++)
-    {
-        virt_addr[i] = (uint8_t *)mmap(NULL, buf_size, PROT_READ, MAP_SHARED,
-                                       mMemFd, (off_t)phy_addr[i]);
-        if(virt_addr[i] == MAP_FAILED)
-        {
-            std::cerr << "acqNumFrames() mapping of phy_addr (0x" << std::hex
-                      << phy_addr[i] << ") failed!"  << std::endl;
-            retVal = -1;
-            goto free_and_exit;
-        }
-        std::cout << "Mapped buffer address 0x" << std::hex << phy_addr[i]
-                  << " to virtual address" << std::endl;
-        memset(virt_addr[i], 0, buf_size);
-    }
+//    for(int i = 0; i < num_frames; i++)
+//    {
+//        virt_addr[i] = (uint8_t *)mmap(NULL, buf_size, PROT_READ | PROT_WRITE,
+//                                       MAP_SHARED, mMemFd, (off_t)phy_addr[i]);
+//        if(virt_addr[i] == MAP_FAILED)
+//        {
+//            std::cerr << "acqNumFrames() mapping of phy_addr (0x" << std::hex
+//                      << phy_addr[i] << ") failed: "  << strerror(errno) << std::endl;
+//            retVal = -1;
+//            goto free_and_exit;
+//        }
+//        std::cout << "Mapped buffer address 0x" << std::hex << phy_addr[i]
+//                  << " to virtual address" << std::endl;
+//        memset(virt_addr[i], 0, buf_size);
+//    }
 
     /* Reset */
     vdmaReset();
 
+    std::cout << "acqNumFrames() number of frames: " << num_frames << std::endl;
+
     /* Clear status */
-    mRegs->s2mmVdmaStat = 0;
+    mRegs->s2mmVdmaStat = 0xffffffff;
 
     /* Mask out all interrupts */
     mRegs->s2mmVdmaIrqMsk = 0xF;
@@ -245,6 +249,8 @@ int rccVdmaCtrl::acqNumFrames(int width, int height, int num_frames,
 
     /* Enable also start bit and wait */
     vdmaStart();
+
+    std::cout << "acqNumFrames() number of frames: " << num_frames << std::endl;
 
     mRegs->s2mmRegIndex = 0;
 
@@ -290,10 +296,10 @@ int rccVdmaCtrl::acqNumFrames(int width, int height, int num_frames,
             cur_frm_cnt = frm_cnt;
 
             std::cout << "FRAME" << frm_idx << " data=";
-            for(int i = 0; i < buf_size; i++)
-            {
-                std::cout << " 0x" << (uint8_t)virt_addr[frm_idx][i];
-            }
+//            for(int i = 0; i < buf_size; i++)
+//            {
+//                std::cout << " 0x" << (uint8_t)virt_addr[frm_idx][i];
+//            }
             std::cout << std::endl;
         }
 

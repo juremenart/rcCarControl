@@ -10,7 +10,7 @@ extern "C" {
 class rccVdmaCtrl {
 private:
     const uint32_t cVdmaCtrlAddr   = 0x43000000;
-    const uint32_t cAxiClock        = 50e6;       // 50 [MHz]
+    const uint32_t cAxiClock       = 50e6;       // 50 [MHz]
 
     typedef struct axiVdmaCtrlRegs_s {
         uint32_t dmaCtrl;        // 0x00 - R/W  - DMA Control Register
@@ -57,6 +57,13 @@ public:
     int      writeReg(uint8_t regOffset, uint32_t regValue);
     uint32_t readReg(uint8_t regOffset);
     void     dumpRegs(void);
+
+    bool     vdmaRunning(void);
+    void     vdmaReset(void);
+    void     vdmaStop(void);
+    void     vdmaStart(void);
+    int      acqNumFrames(int width, int height, int num_frames,
+                          uint32_t *phy_addr);
 
 private:
     int      cleanup(void);

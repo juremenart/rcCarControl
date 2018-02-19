@@ -35,7 +35,7 @@
 #define VDMA_S2MM_DMASR_FRM_CNT        0x00FF0000 // Frame Count
 #define VDMA_S2MM_DMASR_DLY_CNT        0xFF000000 // Delay Count
 
-#define VDMA_S2MM_DMASR_ERR_MASK       0x0000FFF0
+#define VDMA_S2MM_DMASR_ERR_MASK       0x0000CFF0
 
 rccVdmaCtrl::rccVdmaCtrl(void) :
     mMemFd(-1), mRegs(NULL)
@@ -215,8 +215,6 @@ int rccVdmaCtrl::acqNumFrames(int width, int height, int num_frames,
         virt_addr[i] = NULL;
     }
 
-    std::cout << "acqNumFrames() number of frames: " << num_frames << std::endl;
-
     /* Map all physical addresses */
 //    for(int i = 0; i < num_frames; i++)
 //    {
@@ -237,8 +235,6 @@ int rccVdmaCtrl::acqNumFrames(int width, int height, int num_frames,
     /* Reset */
     vdmaReset();
 
-    std::cout << "acqNumFrames() number of frames: " << num_frames << std::endl;
-
     /* Clear status */
     mRegs->s2mmVdmaStat = 0xffffffff;
 
@@ -249,8 +245,6 @@ int rccVdmaCtrl::acqNumFrames(int width, int height, int num_frames,
 
     /* Enable also start bit and wait */
     vdmaStart();
-
-    std::cout << "acqNumFrames() number of frames: " << num_frames << std::endl;
 
     mRegs->s2mmRegIndex = 0;
 
@@ -277,10 +271,10 @@ int rccVdmaCtrl::acqNumFrames(int width, int height, int num_frames,
     std::cout << "Waiting for " << cur_frm_cnt << " frames." << std::endl;
     // Waiting for frames...
 
+    int frm_idx = 0;
     while(cur_frm_cnt > 0)
     {
         int frm_cnt = (mRegs->s2mmVdmaStat & VDMA_S2MM_DMASR_FRM_CNT) >> 16;
-        int frm_idx = num_frames - frm_cnt;
 
         if(mRegs->s2mmVdmaStat & VDMA_S2MM_DMASR_ERR_MASK)
         {
@@ -290,17 +284,21 @@ int rccVdmaCtrl::acqNumFrames(int width, int height, int num_frames,
             break;
         }
 
-        if(frm_cnt < cur_frm_cnt)
+        if(frm_cnt != cur_frm_cnt)
         {
-            /* Frame counter decreased - we have new frame! */
-            cur_frm_cnt = frm_cnt;
-
             std::cout << "FRAME" << frm_idx << " data=";
 //            for(int i = 0; i < buf_size; i++)
 //            {
 //                std::cout << " 0x" << (uint8_t)virt_addr[frm_idx][i];
 //            }
             std::cout << std::endl;
+
+            /* Frame counter decreased - we have new frame! */
+            std::cout << "cur_frm_cnt=" << cur_frm_cnt << " frm_cnt=" << frm_cnt << " num_frames=" << num_frames << " frm_idx=" << frm_idx << std::endl;
+            cur_frm_cnt = frm_cnt;
+            frm_idx++;
+            if(frm_idx == num_frames)
+                break;
         }
 
         // sleep a little bit
@@ -308,17 +306,17 @@ int rccVdmaCtrl::acqNumFrames(int width, int height, int num_frames,
     }
 
 free_and_exit:
-    if(virt_addr)
-    {
-        for(int i = 0; i < num_frames; i++)
-        {
-            if(virt_addr[i] != MAP_FAILED)
-            {
-                munmap(virt_addr[i], buf_size);
-            }
-        }
-        delete virt_addr;
-    }
+//    if(virt_addr)
+//    {
+//        for(int i = 0; i < num_frames; i++)
+//        {
+//            if(virt_addr[i] != MAP_FAILED)
+//            {
+//                munmap(virt_addr[i], buf_size);
+//            }
+//        }
+//        delete virt_addr;
+//    }
 
     return retVal;
 }

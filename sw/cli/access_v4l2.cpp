@@ -50,7 +50,6 @@ int print_caps(int fd)
         if (-1 == xioctl (fd, VIDIOC_CROPCAP, &cropcap))
         {
                 perror("Querying Cropping Capabilities");
-                return 1;
         }
 
         printf( "Camera Cropping:\n"

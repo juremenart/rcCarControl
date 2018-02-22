@@ -1,4 +1,4 @@
-TARGETS=read_console send_drive_data test_axi
+TARGETS=read_console send_drive_data test_axi access_v4l2
 
 HEADERS=
 SOURCES=

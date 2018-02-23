@@ -168,6 +168,21 @@ static void video_ctrl_dump_meas(xrcc_cam_dev_t *dev)
 }
 #endif
 
+static void dump_num_buffers(xrcc_cam_dev_t *dev, const char *text)
+{
+    int i = 0;
+    xrcc_dma_buffer_t *tmp, *ntmp;
+    char out_text[256];
+
+    list_for_each_entry_safe(tmp, ntmp, &dev->queued_bufs, queue) {
+        i++;
+    }
+
+    sprintf(&out_text[0], "%s number of buffers: %d", text, i);
+    XRCC_DEBUG(xrcc_dev_to_dev(dev), out_text);
+}
+
+
 static int xrcc_cam_add_channel(xrcc_cam_dev_t *dev,  const char *chan_name)
 {
     struct dma_chan *chan;
@@ -200,6 +215,9 @@ static void xrcc_cam_rx_callback(void *param)
 
     XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_rx_callback() start");
 
+    /* List elements in incomming vb2_buffer */
+    dump_num_buffers(dev, "xrcc_cam_rx_callback() start");
+
     spin_lock(&dev->queued_lock);
     list_del(&buf->queue);
     spin_unlock(&dev->queued_lock);
@@ -210,6 +228,7 @@ static void xrcc_cam_rx_callback(void *param)
     vb2_set_plane_payload(&buf->buf.vb2_buf, 0, dev->format.sizeimage);
     vb2_buffer_done(&buf->buf.vb2_buf, VB2_BUF_STATE_DONE);
 
+    dump_num_buffers(dev, "xrcc_cam_rx_callback() end");
     XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_rx_callback() end");
 }
 
@@ -224,10 +243,10 @@ static int xrcc_cam_queue_setup(struct vb2_queue *vq,
                "xrcc_cam_queue_setup() start, num_buffers=%d nbuffers=%d",
                vq->num_buffers, *nbuffers);
 
-    if(*nbuffers < dev->frm_cnt)
-    {
-        *nbuffers = dev->frm_cnt;
-    }
+//    if(*nbuffers < dev->frm_cnt)
+//    {
+//        *nbuffers = dev->frm_cnt;
+//    }
 
     /* Make sure the image size is large enough. */
     if(*nplanes)
@@ -248,10 +267,23 @@ static int xrcc_cam_buffer_prepare(struct vb2_buffer *vb)
     struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
     xrcc_cam_dev_t *dev = vb2_get_drv_priv(vb->vb2_queue);
     xrcc_dma_buffer_t *buf = to_xrcc_dma_buffer(vbuf);
+    unsigned long size = dev->format.sizeimage;
 
     XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_buffer_prepare() start");
 
     buf->xrcc_dev = dev;
+
+    if(vb2_plane_size(vb, 0) < size)
+    {
+        XRCC_ERR(xrcc_dev_to_dev(dev),
+                 "Plane size too small for data (%lu < %lu)",
+                 vb2_plane_size(vb, 0), size);
+        return -EINVAL;
+    }
+
+    vb2_set_plane_payload(&buf->buf.vb2_buf, 0, size);
+
+    dump_num_buffers(dev, "xrcc_cam_buffer_prepare()");
 
     XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_buffer_prepare() end");
 
@@ -276,6 +308,8 @@ static void xrcc_cam_buffer_queue(struct vb2_buffer *vb)
                "xrcc_cam_buffer_queue() start, buffer address=0x%08x",
                (uint32_t)addr);
 
+
+    dump_num_buffers(dev, "xrcc_cam_buffer_queue() start");
     /* Configure Xilinx VDMA */
     memset(&xil_vdma_config, 0, sizeof(struct xilinx_vdma_config));
 
@@ -292,7 +326,7 @@ static void xrcc_cam_buffer_queue(struct vb2_buffer *vb)
         return;
     }
 
-        // Map allocated buffers to DMA addresses
+    // Map allocated buffers to DMA addresses
     dev->xt.dir         = DMA_DEV_TO_MEM;
     dev->xt.sgl[0].size = dev->format.width * dev->bpp;
 //TODO    dev->xt.sgl[0].icg  = 0;
@@ -328,9 +362,13 @@ static void xrcc_cam_buffer_queue(struct vb2_buffer *vb)
         return;
     }
 
+    /* List elements in incomming vb2_buffer */
+    dump_num_buffers(dev, "xrcc_cam_buffer_queue() end");
+
     if(vb2_is_streaming(&dev->queue))
     {
-        XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_buffer_queue() still streaming requect pending transactions");
+        XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_buffer_queue()"
+                   " still streaming request pending transactions");
         dma_async_issue_pending(dev->dma_chan);
     }
 
@@ -584,7 +622,7 @@ static int xrcc_cam_video_config(xrcc_cam_dev_t *dev)
     dev->queue.buf_struct_size    = sizeof(xrcc_dma_buffer_t);
     dev->queue.ops                = &xrcc_cam_queue_qops;
     dev->queue.mem_ops            = &vb2_dma_contig_memops;
-    dev->queue.min_buffers_needed = dev->frm_cnt;
+//    dev->queue.min_buffers_needed = dev->frm_cnt;
     dev->queue.timestamp_flags    =
         V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC | V4L2_BUF_FLAG_TSTAMP_SRC_EOF;
     dev->queue.dev = xrcc_dev_to_dev(dev);
@@ -612,6 +650,7 @@ static int xrcc_cam_v4l2_cleanup(xrcc_cam_dev_t *dev)
     {
 
     }
+
     v4l2_device_unregister(&dev->v4l2_dev);
     media_device_unregister(&dev->media_dev);
     media_device_cleanup(&dev->media_dev);
@@ -625,6 +664,8 @@ static int xrcc_cam_cleanup(xrcc_cam_dev_t *dev)
     {
         return 0;
     }
+
+    vb2_queue_release(&dev->queue);
 
 #ifdef VIDEO_CTRL_INTEGRATED
     iounmap(dev->video_ctrl_mem);

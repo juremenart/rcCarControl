@@ -100,7 +100,7 @@ int init_mmap(int fd)
     struct v4l2_requestbuffers req;
 
     memset(&req, 0, sizeof(struct v4l2_requestbuffers));
-    req.count = 1;
+    req.count = cNumBuffers;
     req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     req.memory = V4L2_MEMORY_MMAP;
 
@@ -110,25 +110,26 @@ int init_mmap(int fd)
         return 1;
     }
 
-    struct v4l2_buffer buf;
+    struct v4l2_buffer buf[cNumBuffers];
 
-    memset(&buf, 0, sizeof(struct v4l2_buffer));
-
-    buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    buf.memory = V4L2_MEMORY_MMAP;
-    buf.index = 0;
-    if(-1 == xioctl(fd, VIDIOC_QUERYBUF, &buf))
-    {
-        perror("Querying Buffer");
-        return 1;
-    }
-
-    printf("Buffer length: %d, image length: %d\n", buf.length, buf.bytesused);
 
     for(int i = 0; i < cNumBuffers; i++)
     {
-        buffer[i] = (uint8_t *)mmap (NULL, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED,
-                                  fd, buf.m.offset);
+        memset(&buf[i], 0, sizeof(struct v4l2_buffer));
+
+        buf[i].type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf[i].memory = V4L2_MEMORY_MMAP;
+        buf[i].index = i;
+        if(-1 == xioctl(fd, VIDIOC_QUERYBUF, &buf[i]))
+        {
+            perror("Querying Buffer");
+            return 1;
+        }
+
+        printf("Buffer length: %d, image length: %d\n", buf[i].length, buf[i].bytesused);
+        buffer[i] = (uint8_t *)mmap (NULL, buf[i].length,
+                                     PROT_READ | PROT_WRITE, MAP_SHARED,
+                                     fd, buf[i].m.offset);
         printf("Buffer %d addess: %p\n", i, buffer[i]);
     }
 

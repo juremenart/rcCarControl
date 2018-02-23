@@ -192,7 +192,7 @@ int capture_image(int fd, int index)
         sprintf((char *)&fout_str[0], "/tmp/image%d.jpg", index);
         printf("Saving image to: %s\n", fout_str);
 
-        fout = open(fout_str, O_RDWR);
+        fout = open(fout_str, O_RDWR | O_CREAT);
         if(fout < 0)
         {
             perror("Can not open output file");

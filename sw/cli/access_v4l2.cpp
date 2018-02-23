@@ -8,7 +8,9 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-uint8_t *buffer;
+const uint8_t cNumBuffers = 3;
+
+uint8_t *buffer[cNumBuffers];
 
 static int xioctl(int fd, int request, void *arg)
 {
@@ -42,23 +44,6 @@ int print_caps(int fd)
                 (caps.version>>24)&&0xff,
                 caps.capabilities);
 
-
-        struct v4l2_cropcap cropcap;
-
-        memset(&cropcap, 0, sizeof(struct v4l2_cropcap));
-        cropcap.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-        if (-1 == xioctl (fd, VIDIOC_CROPCAP, &cropcap))
-        {
-                perror("Querying Cropping Capabilities");
-        }
-
-        printf( "Camera Cropping:\n"
-                "  Bounds: %dx%d+%d+%d\n"
-                "  Default: %dx%d+%d+%d\n"
-                "  Aspect: %d/%d\n",
-                cropcap.bounds.width, cropcap.bounds.height, cropcap.bounds.left, cropcap.bounds.top,
-                cropcap.defrect.width, cropcap.defrect.height, cropcap.defrect.left, cropcap.defrect.top,
-                cropcap.pixelaspect.numerator, cropcap.pixelaspect.denominator);
 
         struct v4l2_fmtdesc fmtdesc;
 
@@ -138,10 +123,14 @@ int init_mmap(int fd)
         return 1;
     }
 
-    buffer = (uint8_t *)mmap (NULL, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED,
-                   fd, buf.m.offset);
-    printf("Length: %d\nAddress: %p\n", buf.length, buffer);
-    printf("Image Length: %d\n", buf.bytesused);
+    printf("Buffer length: %d, image length: %d\n", buf.length, buf.bytesused);
+
+    for(int i = 0; i < cNumBuffers; i++)
+    {
+        buffer[i] = (uint8_t *)mmap (NULL, buf.length, PROT_READ | PROT_WRITE, MAP_SHARED,
+                                  fd, buf.m.offset);
+        printf("Buffer %d addess: %p\n", i, buffer[i]);
+    }
 
     return 0;
 }
@@ -210,7 +199,7 @@ int capture_image(int fd, int index)
             return -1;
         }
 
-        write(fout, buffer, 640*480*2);
+        write(fout, buffer[index%cNumBuffers], 640*480*2);
 
         close(fout);
     }

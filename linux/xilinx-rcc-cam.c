@@ -316,7 +316,7 @@ static void xrcc_cam_buffer_queue(struct vb2_buffer *vb)
     xil_vdma_config.frm_cnt_en = 1;
     xil_vdma_config.coalesc    = 1;//dev->frm_cnt;
     xil_vdma_config.park       = 0;
-    xil_vdma_config.reset      = 0;
+    xil_vdma_config.reset      = 1;
 
     err = xilinx_vdma_channel_set_config(dev->dma_chan, &xil_vdma_config);
     if(err)
@@ -329,8 +329,8 @@ static void xrcc_cam_buffer_queue(struct vb2_buffer *vb)
     // Map allocated buffers to DMA addresses
     dev->xt.dir         = DMA_DEV_TO_MEM;
     dev->xt.sgl[0].size = dev->format.width * dev->bpp;
-//TODO    dev->xt.sgl[0].icg  = 0;
-    dev->xt.sgl[0].icg  = dev->format.bytesperline - dev->xt.sgl[0].size;
+    dev->xt.sgl[0].icg  = 0;
+//    dev->xt.sgl[0].icg  = dev->format.bytesperline - dev->xt.sgl[0].size;
     dev->xt.frame_size  = 1;
     dev->xt.numf        = dev->format.height;
 

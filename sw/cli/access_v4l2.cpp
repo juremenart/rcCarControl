@@ -8,7 +8,7 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-const uint8_t cNumBuffers = 3;
+const uint8_t cNumBuffers = 1;
 
 uint8_t *buffer[cNumBuffers];
 
@@ -190,7 +190,7 @@ int capture_image(int fd, int index)
         int fout;
         char fout_str[64];
 
-        sprintf((char *)&fout_str[0], "/tmp/image%d.jpg", index);
+        sprintf((char *)&fout_str[0], "/tmp/image%02d.raw", index);
         printf("Saving image to: %s\n", fout_str);
 
         fout = open(fout_str, O_RDWR | O_CREAT);
@@ -229,7 +229,7 @@ int main(int argc, char *argv[])
         if(init_mmap(fd))
             return 1;
         int i;
-        for(i=0; i<5; i++)
+        for(i=0; i<20; i++)
         {
             if(capture_image(fd, i))
                 return 1;

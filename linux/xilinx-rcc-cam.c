@@ -502,6 +502,82 @@ static int xrcc_cam_try_format(struct file *file, void *fh,
     return 0;
 }
 
+static int xrcc_cam_g_input(struct file *file, void *priv, unsigned int *i)
+{
+    *i = 0;
+
+    return 0;
+}
+
+static int xrcc_cam_s_input(struct file *file, void *priv, unsigned int i)
+{
+    if (i > 0)
+        return -EINVAL;
+
+    return 0;
+}
+
+static int xrcc_cam_enum_input(struct file *file, void *priv,
+                               struct v4l2_input *inp)
+{
+    xrcc_cam_dev_t *dev = file->private_data;
+
+    if (inp->index != 0)
+        return -EINVAL;
+
+    /* default is camera */
+    inp->type = V4L2_INPUT_TYPE_CAMERA;
+    inp->std = dev->video.tvnorms;
+    strcpy(inp->name, "Camera");
+
+    return 0;
+}
+
+static int xrcc_cam_g_selection(struct file *file, void *fh,
+                                struct v4l2_selection *s)
+{
+    xrcc_cam_dev_t *dev = file->private_data;
+
+    /* With a wrong type no need to try to fall back to cropping */
+    if (s->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+        return -EINVAL;
+
+    // TODO: selection not supported yet
+    s->r.left = 0;
+    s->r.top = 0;
+    s->r.width = dev->width;
+    s->r.height = dev->height;
+    return 0;
+}
+
+static int xrcc_cam_s_selection(struct file *file, void *fh,
+                                struct v4l2_selection *s)
+{
+//    xrcc_cam_dev_t *dev = file->private_data;
+
+    /* TODO: selection not supported yet - ignore it */
+    return 0;
+}
+
+static int xrcc_cam_g_parm(struct file *file, void *fh,
+                           struct v4l2_streamparm *a)
+{
+//    xrcc_cam_dev_t *dev = file->private_data;
+
+    /* TODO: Not supported yet */
+    return 0;
+}
+
+static int xrcc_cam_s_parm(struct file *file, void *fh,
+                           struct v4l2_streamparm *a)
+{
+//    xrcc_cam_dev_t *dev = file->private_data;
+
+    /* TODO: Not supported yet */
+
+    return 0;
+}
+
 static int xrcc_cam_set_format(struct file *file, void *fh,
                                struct v4l2_format *format)
 {
@@ -563,6 +639,14 @@ static const struct v4l2_ioctl_ops xrcc_cam_ioctl_ops = {
     .vidioc_expbuf           = vb2_ioctl_expbuf,
     .vidioc_streamon         = vb2_ioctl_streamon,
     .vidioc_streamoff        = vb2_ioctl_streamoff,
+    // dummy ones (needed by ffmpeg)
+    .vidioc_g_input          = xrcc_cam_g_input,
+    .vidioc_s_input          = xrcc_cam_s_input,
+    .vidioc_enum_input       = xrcc_cam_enum_input,
+    .vidioc_g_selection      = xrcc_cam_g_selection,
+    .vidioc_s_selection      = xrcc_cam_s_selection,
+    .vidioc_g_parm           = xrcc_cam_g_parm,
+    .vidioc_s_parm           = xrcc_cam_s_parm,
 };
 
 static const struct v4l2_file_operations xrcc_cam_dma_fops = {

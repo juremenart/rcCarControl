@@ -127,6 +127,7 @@ xilinx.com:ip:smartconnect:1.0\
 xilinx.com:ip:axi_vdma:6.3\
 xilinx.com:ip:proc_sys_reset:5.0\
 xilinx.com:ip:processing_system7:5.5\
+xilinx.com:ip:xlconcat:2.1\
 "
 
    set list_ips_missing ""
@@ -243,11 +244,17 @@ proc create_root_design { parentCell } {
   set FCLK_CLK1_0 [ create_bd_port -dir O -type clk FCLK_CLK1_0 ]
   set FCLK_RESET0_N [ create_bd_port -dir O -from 0 -to 0 -type rst FCLK_RESET0_N ]
   set FCLK_RESET1_N_0 [ create_bd_port -dir O -type rst FCLK_RESET1_N_0 ]
+  set s2mm_frame_ptr_in [ create_bd_port -dir I -from 5 -to 0 s2mm_frame_ptr_in ]
+  set s2mm_frame_ptr_out [ create_bd_port -dir O -from 5 -to 0 s2mm_frame_ptr_out ]
   set s_axis_s2mm_aclk_0 [ create_bd_port -dir I -type clk s_axis_s2mm_aclk_0 ]
   set_property -dict [ list \
    CONFIG.CLK_DOMAIN {bd_system_processing_system7_0_0_FCLK_CLK0} \
    CONFIG.FREQ_HZ {50000000} \
  ] $s_axis_s2mm_aclk_0
+  set vdma_frame_int_in [ create_bd_port -dir I -from 0 -to 0 -type intr vdma_frame_int_in ]
+  set_property -dict [ list \
+   CONFIG.PortWidth {1} \
+ ] $vdma_frame_int_in
 
   # Create instance: axi_interconnect_0, and set properties
   set axi_interconnect_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:axi_interconnect:2.1 axi_interconnect_0 ]
@@ -1071,6 +1078,9 @@ proc create_root_design { parentCell } {
    CONFIG.PCW_WDT_PERIPHERAL_FREQMHZ {133.333333} \
  ] $processing_system7_0
 
+  # Create instance: xlconcat_0, and set properties
+  set xlconcat_0 [ create_bd_cell -type ip -vlnv xilinx.com:ip:xlconcat:2.1 xlconcat_0 ]
+
   # Create interface connections
   connect_bd_intf_net -intf_net S_AXIS_S2MM_0_1 [get_bd_intf_ports S_AXIS_S2MM_0] [get_bd_intf_pins axi_vdma_0/S_AXIS_S2MM]
   connect_bd_intf_net -intf_net S_AXI_HP0_FIFO_CTRL_0_1 [get_bd_intf_ports S_AXI_HP0_FIFO_CTRL_0] [get_bd_intf_pins processing_system7_0/S_AXI_HP0_FIFO_CTRL]
@@ -1085,14 +1095,18 @@ proc create_root_design { parentCell } {
   connect_bd_intf_net -intf_net processing_system7_0_M_AXI_GP0 [get_bd_intf_pins axi_interconnect_0/S00_AXI] [get_bd_intf_pins processing_system7_0/M_AXI_GP0]
 
   # Create port connections
-  connect_bd_net -net axi_vdma_0_s2mm_introut [get_bd_pins axi_vdma_0/s2mm_introut] [get_bd_pins processing_system7_0/IRQ_F2P]
+  connect_bd_net -net axi_vdma_0_s2mm_frame_ptr_out [get_bd_ports s2mm_frame_ptr_out] [get_bd_pins axi_vdma_0/s2mm_frame_ptr_out]
+  connect_bd_net -net axi_vdma_0_s2mm_introut [get_bd_pins axi_vdma_0/s2mm_introut] [get_bd_pins xlconcat_0/In0]
   connect_bd_net -net proc_sys_reset_0_interconnect_aresetn [get_bd_pins axi_interconnect_0/ARESETN] [get_bd_pins proc_sys_reset_0/interconnect_aresetn]
   connect_bd_net -net proc_sys_reset_0_peripheral_aresetn [get_bd_ports FCLK_RESET0_N] [get_bd_pins axi_interconnect_0/M00_ARESETN] [get_bd_pins axi_interconnect_0/M01_ARESETN] [get_bd_pins axi_interconnect_0/M02_ARESETN] [get_bd_pins axi_interconnect_0/S00_ARESETN] [get_bd_pins axi_smc/aresetn] [get_bd_pins axi_vdma_0/axi_resetn] [get_bd_pins proc_sys_reset_0/peripheral_aresetn]
   connect_bd_net -net processing_system7_0_FCLK_CLK0 [get_bd_ports FCLK_CLK0] [get_bd_pins axi_interconnect_0/ACLK] [get_bd_pins axi_interconnect_0/M00_ACLK] [get_bd_pins axi_interconnect_0/M01_ACLK] [get_bd_pins axi_interconnect_0/M02_ACLK] [get_bd_pins axi_interconnect_0/S00_ACLK] [get_bd_pins axi_smc/aclk] [get_bd_pins axi_vdma_0/m_axi_s2mm_aclk] [get_bd_pins axi_vdma_0/s_axi_lite_aclk] [get_bd_pins proc_sys_reset_0/slowest_sync_clk] [get_bd_pins processing_system7_0/FCLK_CLK0] [get_bd_pins processing_system7_0/M_AXI_GP0_ACLK] [get_bd_pins processing_system7_0/S_AXI_HP0_ACLK]
   connect_bd_net -net processing_system7_0_FCLK_CLK1 [get_bd_ports FCLK_CLK1_0] [get_bd_pins processing_system7_0/FCLK_CLK1]
   connect_bd_net -net processing_system7_0_FCLK_RESET0_N [get_bd_pins proc_sys_reset_0/ext_reset_in] [get_bd_pins processing_system7_0/FCLK_RESET0_N]
   connect_bd_net -net processing_system7_0_FCLK_RESET1_N [get_bd_ports FCLK_RESET1_N_0] [get_bd_pins processing_system7_0/FCLK_RESET1_N]
+  connect_bd_net -net s2mm_frame_ptr_in_1 [get_bd_ports s2mm_frame_ptr_in] [get_bd_pins axi_vdma_0/s2mm_frame_ptr_in]
   connect_bd_net -net s_axis_s2mm_aclk_1 [get_bd_ports s_axis_s2mm_aclk_0] [get_bd_pins axi_vdma_0/s_axis_s2mm_aclk]
+  connect_bd_net -net vdma_frame_int_in_1 [get_bd_ports vdma_frame_int_in] [get_bd_pins xlconcat_0/In1]
+  connect_bd_net -net xlconcat_0_dout [get_bd_pins processing_system7_0/IRQ_F2P] [get_bd_pins xlconcat_0/dout]
 
   # Create address segments
   create_bd_addr_seg -range 0x40000000 -offset 0x00000000 [get_bd_addr_spaces axi_vdma_0/Data_S2MM] [get_bd_addr_segs processing_system7_0/S_AXI_HP0/HP0_DDR_LOWOCM] SEG_processing_system7_0_HP0_DDR_LOWOCM

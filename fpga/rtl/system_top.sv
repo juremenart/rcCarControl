@@ -117,6 +117,11 @@ module bd_system_wrapper
 
    wire         cam_pclk_gclk;
 
+   wire         s2mm_frame_ptr_in;
+   wire         s2mm_frame_ptr_out;
+   wire         vdma_frame_int;
+
+
    parameter int AXI_STREAM_DW = 8;
 
    // AXI4-Lite buses
@@ -157,7 +162,10 @@ module bd_system_wrapper
    video_ctrl_top video_ctrl_top_i
      (.axi_bus(axi_bus_video_ctrl),
       .axi_video_o(axi_str_video),
-      .bt656_video_i(bt656_input_video));
+      .bt656_video_i(bt656_input_video),
+      .vdma_frame_ptr_i(s2mm_frame_ptr_out),
+      .vdma_frame_ptr_o(s2mm_frame_ptr_in),
+      .vdma_frame_int_o(vdma_frame_int));
 
    bd_system bd_system_i
      (.DDR_addr(DDR_addr),
@@ -230,6 +238,9 @@ module bd_system_wrapper
       .S_AXIS_S2MM_0_tuser(axi_str_video.TUSER),
       .S_AXIS_S2MM_0_tvalid(axi_str_video.TVALID),
       .s_axis_s2mm_aclk_0(axi_str_video.ACLK),
+      .s2mm_frame_ptr_in(s2mm_frame_ptr_in),
+      .s2mm_frame_ptr_out(s2mm_frame_ptr_out),
+      .vdma_frame_int_in(vdma_frame_int),
       .IIC_0_0_scl_i(cam_iic_scl_i),
       .IIC_0_0_scl_o(cam_iic_scl_o),
       .IIC_0_0_scl_t(cam_iic_scl_t),

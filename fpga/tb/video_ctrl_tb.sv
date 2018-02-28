@@ -21,7 +21,9 @@ module video_ctrl_tb
 
    logic                                    pure_bt656;
    logic                                    axi_vdma_introut;
-
+   logic [5:0]                              s2mm_frame_ptr_in;
+   logic [5:0]                              s2mm_frame_ptr_out;
+   logic                                    vdma_frame_int;
    // to check either BT656 generation or OV DVP like interface
    assign pure_bt656 = 1'b0;
 
@@ -64,21 +66,36 @@ module video_ctrl_tb
    logic [32-1:0] ver;
    logic [32-1:0] video_meas1, video_meas2;
    logic [32-1:0] vdma_status, vdma_version;
+   logic [32-1:0] rx_ctrl_reg;
 
    // BE CAREFUL: Should match the size coming from bt656_stream_gen if not using
    // internal VIDEO_CTRL TP generator (bt656_stream_gen is not very programmable
    // from outside - it has this fancy array of blanking dpeending on hblank/pixels/lines/...
-   logic [11:0] sim_height = 480;
-   logic [11:0] sim_weight = 640;
-   parameter sim_num_frames = 2;
+   logic [11:0] sim_height = 12'h010;
+   logic [11:0] sim_weight = 12'h018;
+   logic [7:0] sim_num_frames = 20;
    logic [23:0] tp_blanking = sim_height * sim_weight * 2;
 
-   logic        use_tp_gen = 1;
+   logic        use_tp_gen = 0;
+
+   logic [5:0]  bin_ptr;
+   logic [5:0]  prot_buffer_ptr;
+
+   parameter    num_buffers = 3;
+   const logic[32-1:0] dst_addr[num_buffers] =
+                       {
+                        32'h27c0_0000,
+                        32'h28c0_0000,
+                        32'h29c0_0000
+                        };
 
    initial begin
       repeat(20) @(posedge clk);
       video_stream.TREADY <= 1'b1;
       axi_read('h00, ver);
+
+      // dummy frame (we have only 3 FBs so we set currently slave read to something illegal
+
       $display("Video controller version = 0x%08x", ver);
 
       axi_vdma_read('h2C, vdma_version);
@@ -97,9 +114,10 @@ module video_ctrl_tb
       axi_vdma_write('h34, 0);
 
       // Start the engine and wait for stat bit to be asserted
-//      axi_vdma_write('h30, { {8{1'b0}}, sim_num_frames, 16'h7013 });
       axi_vdma_write('h28, 32'h0000_0100 );
-      axi_vdma_write('h30, 32'h001f_7013 );
+//      axi_vdma_write('h30, { {8{1'b0}}, sim_num_frames, 16'h701b });
+      axi_vdma_write('h30, { 32'h0000400b });
+//      axi_vdma_write('h30, { {8{1'b0}}, 8'h1, 16'h701b });
 
       do
         begin
@@ -111,9 +129,13 @@ module video_ctrl_tb
       axi_vdma_write('h44, 0);
 
       // START_ADDRESS from 0xAC - 0xE8
-      axi_vdma_write('hAC, 32'h27c0_0000);
-      axi_vdma_write('hB0, 32'h28c0_0000);
-      axi_vdma_write('hB4, 32'h29c0_0000);
+//      axi_vdma_write('hAC, 32'h27c0_0000);
+//      axi_vdma_write('hB0, 32'h28c0_0000);
+//      axi_vdma_write('hB4, 32'h29c0_0000);
+      for(int i = 0; i < num_buffers; i++)
+        begin
+           axi_vdma_write('hAC + i*4, dst_addr[i][32-1:0]);
+        end
 
       // PART_PTR
       axi_vdma_write('h28, 0);
@@ -142,24 +164,57 @@ module video_ctrl_tb
       if(use_tp_gen == 1'b1)
         begin
            // VIDEO_CTRL Test pattern generator
-//           axi_write('h08, {{4{1'b0}}, sim_height, {3{1'b0}}, sim_weight[10:0], 1'b0} );
-//           axi_write('h04, { tp_blanking, 8'h01 }); // AXI FIFO write set to line * 2
-           axi_write('h08, 32'h01e0_0500); // AXI FIFO write set to line * 2
-           axi_write('h04, 32'h000a_0007 );
+           axi_write('h08, {{4{1'b0}}, sim_height, {3{1'b0}}, sim_weight[10:0], 1'b0} );
+           axi_write('h04, { tp_blanking, 8'h01 }); // AXI FIFO write set to line * 2
+//           axi_write('h08, 32'h01e0_0500); // AXI FIFO write set to line * 2
+//           axi_write('h04, 32'h000a_0007 );
 
         end
       else
         begin
            // BT656 to Stream module
            axi_write('h1C, { {5{1'b0}}, sim_weight, {5{1'b0}}, sim_weight[10:0], 1'b0 } );
-           axi_write('h0C, 32'h0000_0005);
+           axi_write('h0C, 32'h0000_0015);
         end
 
-      @(posedge axi_vdma_introut)
+      do
         begin
-           axi_vdma_read('h34, vdma_status);
-           $display("Interrupt detected: 0x%08x", vdma_status);
+           @(posedge axi_vdma_introut or posedge vdma_frame_int)
+             begin
+                axi_vdma_read('h34, vdma_status);
+                $display("Interrupt detected: 0x%08x", vdma_status);
+
+                axi_read('h0C, rx_ctrl_reg);
+                $display("RX Control register: 0x%08x", rx_ctrl_reg);
+
+                gray2bin(rx_ctrl_reg[29:24], bin_ptr);
+
+                $display("Buffer available from pointer %d, address: 0x%08x",
+                         bin_ptr, dst_addr[bin_ptr]);
+
+                // protect this buffer for two frames
+                if(sim_num_frames[1:0] == 2'b00)
+                  begin
+                     bin2gray(bin_ptr, prot_buffer_ptr);
+                     $display("Protecting read buffer %d (%d), address: 0x%08x",
+                              bin_ptr, prot_buffer_ptr, dst_addr[bin_ptr]);
+                     axi_write('h0C,  {rx_ctrl_reg[31:22], prot_buffer_ptr,
+                                      rx_ctrl_reg[15:0]});
+                  end
+                else
+                  begin
+                     axi_write('h0C, rx_ctrl_reg);
+                  end
+                sim_num_frames <= sim_num_frames - 1;
+
+                if(axi_vdma_introut)
+                  begin
+                     $display("AXI VDMA Interrupt detected, quitting");
+                     $finish;
+                  end
+             end // do begin
         end // do begin
+      while(sim_num_frames > 0);
 
       axi_sys_read('h18, video_meas1);
       axi_sys_read('h1C, video_meas2);
@@ -285,6 +340,27 @@ module video_ctrl_tb
       dat = r >> 2;
    endtask: axi_vdma_read
 
+   task gray2bin (input logic [5:0] gray,
+                  output logic [5:0] bin);
+     bin[5] = gray[5];
+     for(int i=4; i >= 0; i=i-1)
+        begin : bin_out_gen
+          bin[i] = gray[i] ^ bin[i+1];
+        end
+      bin = bin -1; // Gray really starts with 1
+      bin = bin % num_buffers; // Gray is always done on ^2 so we need to 'wrap' it
+
+      repeat(5) @(posedge clk);
+   endtask: gray2bin
+
+   task bin2gray (input logic [5:0] bin,
+                  output logic [5:0] gray);
+      bin = bin + 1;
+      gray <= {bin[5], bin[4:0] ^ bin[5:1]};
+
+      repeat(5) @(posedge clk);
+   endtask: bin2gray
+
    ////////////////////////////////////////////////////////////////////////////////
    // module instances
    ////////////////////////////////////////////////////////////////////////////////
@@ -301,9 +377,12 @@ module video_ctrl_tb
 
    video_ctrl_top video_ctrl_top_i
      (
-      .axi_bus     (axi4_lite),
-      .axi_video_o (video_stream),
-      .bt656_video_i(bt656_stream)
+      .axi_bus(axi4_lite),
+      .axi_video_o(video_stream),
+      .bt656_video_i(bt656_stream),
+      .vdma_frame_ptr_i(s2mm_frame_ptr_out),
+      .vdma_frame_ptr_o(s2mm_frame_ptr_in),
+      .vdma_frame_int_o(vdma_frame_int)
       );
 
    sys_ctrl_top sys_ctrl_top_i
@@ -353,8 +432,8 @@ module video_ctrl_tb
       .s_axis_s2mm_tlast(video_stream.TLAST),
       .s2mm_introut(axi_vdma_introut),
 
-      .s2mm_frame_ptr_in(5'b00000), // JJJ
-      .s2mm_frame_ptr_out(), // JJJ
+      .s2mm_frame_ptr_in(s2mm_frame_ptr_in),
+      .s2mm_frame_ptr_out(s2mm_frame_ptr_out),
       .m_axi_s2mm_awaddr(), // JJJ
       .m_axi_s2mm_awlen(), // JJJ
       .m_axi_s2mm_awsize(), // JJJ

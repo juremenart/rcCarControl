@@ -12,7 +12,12 @@ module video_ctrl_top #(
     axi4_stream_if.s axi_video_o,
 
     // BT 656 input video stream
-    bt656_stream_if.d bt656_video_i
+    bt656_stream_if.d bt656_video_i,
+
+    // Direct VDMA control - read & write pointers
+    input  logic [5:0] vdma_frame_ptr_i, // the pointer that VDMA is currently writting to
+    output logic [5:0] vdma_frame_ptr_o, // the pointer that slave is currently reading from (set from AXI by driver)
+    output logic vdma_frame_int_o // frame interrupt (VDMA changed buffer)
     );
 
    // TODO: Put TP to interface type
@@ -32,7 +37,6 @@ module video_ctrl_top #(
      (
       .axi_bus(axi_bus),
 
-
       .tp_en_gen_o(tp_gen_en),
       .tp_width_o(tp_width),
       .tp_height_o(tp_height),
@@ -40,7 +44,10 @@ module video_ctrl_top #(
       .tp_blanking_o(tp_blanking),
 
       // Receiver / bt656_to_axi_stream configuration
-      .rx_cfg(rx_cfg)
+      .rx_cfg(rx_cfg),
+      .vdma_frame_ptr_i(vdma_frame_ptr_i),
+      .vdma_frame_ptr_o(vdma_frame_ptr_o),
+      .vdma_frame_int_o(vdma_frame_int_o)
       );
 
    bt656_to_axi_stream #(.DW(axi_video_o.DW)) bt656_to_axi_stream_i

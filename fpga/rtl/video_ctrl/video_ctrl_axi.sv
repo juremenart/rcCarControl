@@ -17,7 +17,11 @@ module video_ctrl_axi #(
     output logic [6:0]  tp_num_frames_o,
     output logic [23:0] tp_blanking_o,
 
-    rx_cfg_if.s rx_cfg
+    rx_cfg_if.s rx_cfg,
+
+    input  logic [5:0]  vdma_frame_ptr_i,
+    output logic [5:0]  vdma_frame_ptr_o,
+    output logic        vdma_frame_int_o
     );
 
    // Register map
@@ -57,26 +61,36 @@ module video_ctrl_axi #(
    reg [10:0]              data_fifo_start_read;
    reg [10:0]              data_fifo_line_len;
 
+   reg [5:0]               vdma_frame_ptr_o_r;
+   reg [5:0]               vdma_frame_ptr_i_r; // used for interrupt generation
+   reg                     vdma_frame_inten_r;
+   reg                     vdma_frame_int_r, vdma_frame_int_clear_r;
+
    // Write registers
    always_ff @(posedge axi_bus.ACLK)
      if (axi_bus.ARESETn == 1'b0)
        begin
-          tp_en_gen_r          <= 1'b0;
-          tp_width_r           <= 640;
-          tp_height_r          <= 480;
-          rx_enable            <= 1'b0;
-          pure_bt656           <= 1'b0;
-          cam_rstn             <= 1'b1;
-          cam_pwdn             <= 1'b0;
-          rx_cfg.rst_size_err  <= 1'b0;
-          data_fifo_start_read <= (640<<1);
-          data_fifo_line_len   <= (640<<1);
-          tp_num_frames_r      <= '0;
-          tp_blanking_r        <= (640<<2);
+          tp_en_gen_r            <= 1'b0;
+          tp_width_r             <= 640;
+          tp_height_r            <= 480;
+          rx_enable              <= 1'b0;
+          pure_bt656             <= 1'b0;
+          cam_rstn               <= 1'b1;
+          cam_pwdn               <= 1'b0;
+          rx_cfg.rst_size_err    <= 1'b0;
+          data_fifo_start_read   <= (640<<1);
+          data_fifo_line_len     <= (640<<1);
+          tp_num_frames_r        <= '0;
+          tp_blanking_r          <= (640<<2);
+          vdma_frame_ptr_o_r     <= '0;
+          vdma_frame_inten_r     <= '0;
+          vdma_frame_int_clear_r <= 1'b0;
        end
      else
        begin
           rx_cfg.rst_size_err <= 1'b0;
+          vdma_frame_int_clear_r <= 1'b0;
+
           if (slv_reg_wren)
             begin
                case (axi_awaddr)
@@ -95,10 +109,15 @@ module video_ctrl_axi #(
                    end
                  RX_CTRL_ADDR:
                    begin
-                      rx_enable   <= axi_bus.WDATA[0];
-                      pure_bt656  <= axi_bus.WDATA[1];
-                      cam_rstn    <= axi_bus.WDATA[2];
-                      cam_pwdn    <= axi_bus.WDATA[3];
+                      rx_enable              <= axi_bus.WDATA[0];
+                      pure_bt656             <= axi_bus.WDATA[1];
+                      cam_rstn               <= axi_bus.WDATA[2];
+                      cam_pwdn               <= axi_bus.WDATA[3];
+                      vdma_frame_inten_r     <= axi_bus.WDATA[4];
+                      vdma_frame_int_clear_r <= axi_bus.WDATA[5];
+
+                      vdma_frame_ptr_o_r <= axi_bus.WDATA[21:16];
+
                    end
                  RX_SIZE_STAT_ADDR:
                    begin
@@ -128,7 +147,10 @@ module video_ctrl_axi #(
             TP_SIZE_ADDR:
               axi_bus.RDATA <= { {5{1'b0}}, tp_height_r, {5{1'b0}}, tp_width_r };
             RX_CTRL_ADDR:
-              axi_bus.RDATA <= { {28{1'b0}}, cam_pwdn, cam_rstn, pure_bt656, rx_enable };
+              axi_bus.RDATA <= { {2{1'b0}}, vdma_frame_ptr_i,
+                                 {2{1'b0}}, vdma_frame_ptr_o_r,
+                                 {10{1'b0}}, vdma_frame_int_r, vdma_frame_inten_r,
+                                 cam_pwdn, cam_rstn, pure_bt656, rx_enable };
             RX_SIZE_STAT_ADDR:
               axi_bus.RDATA <= rx_cfg.size_status;
             RX_FRAME_CNTS_ADDR:
@@ -166,6 +188,27 @@ module video_ctrl_axi #(
 
    assign rx_cfg.data_fifo_start    = data_fifo_start_read;
    assign rx_cfg.data_fifo_line_len = data_fifo_line_len;
+
+   assign vdma_frame_ptr_o = vdma_frame_ptr_o_r;
+
+   // TODO: Sync input frame pointer if AXI Stream clock != AXI Lite bus
+   assign vdma_frame_int_o = vdma_frame_int_r;
+
+   // Frame interrupt generation
+   always_ff @(posedge axi_bus.ACLK)
+     if(~axi_bus.ARESETn)
+       begin
+          vdma_frame_ptr_i_r <= '0;
+          vdma_frame_int_r   <= 1'b0;
+       end
+     else
+       begin
+          vdma_frame_ptr_i_r <= vdma_frame_ptr_i;
+          if(vdma_frame_int_clear_r)
+            vdma_frame_int_r <= 1'b0;
+          else if((vdma_frame_ptr_i_r != vdma_frame_ptr_i) && vdma_frame_inten_r)
+            vdma_frame_int_r <= 1'b1;
+       end
 
    // Example-specific design signals
    // local parameter for addressing 32 bit / 64 bit DW

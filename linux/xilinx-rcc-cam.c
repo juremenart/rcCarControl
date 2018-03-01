@@ -30,6 +30,7 @@
 #define XRCC_ERR(...)   dev_err(__VA_ARGS__)
 
 #define VIDEO_CTRL_INTEGRATED
+#define VDMA_CTRL_INTEGRATED
 
 typedef struct xrcc_cam_dev_s {
     // number of frame buffers, must be set only once at the beginning
@@ -70,6 +71,9 @@ typedef struct xrcc_cam_dev_s {
     int                        frame_ptr_irq;
 #endif
 
+#ifdef VDMA_CTRL_INTEGRATED
+    void __iomem              *vdma_ctrl_mem;
+#endif
 } xrcc_cam_dev_t;
 
 typedef struct xrcc_dma_buffer_s {
@@ -189,6 +193,28 @@ static void video_ctrl_dump_meas(xrcc_cam_dev_t *dev)
 }
 #endif
 
+#ifdef VDMA_CTRL_INTEGRATED
+
+#define VDMA_CTRL_VERSION_REG 0x2C
+
+static inline u32 vdma_ctrl_read(xrcc_cam_dev_t *dev, u32 reg)
+{
+    if(dev->vdma_ctrl_mem)
+        return ioread32(dev->vdma_ctrl_mem + reg);
+    else
+    {
+        XRCC_ERR(xrcc_dev_to_dev(dev), "vdma_ctrl_read() memory not mapped!");
+        return 0;
+    }
+}
+
+static inline u32 vdma_ctrl_version(xrcc_cam_dev_t *dev)
+{
+    return vdma_ctrl_read(dev, VDMA_CTRL_VERSION_REG);
+}
+
+#endif
+
 static void dump_num_buffers(xrcc_cam_dev_t *dev, const char *text)
 {
     int i = 0;
@@ -265,6 +291,7 @@ static int xrcc_cam_queue_setup(struct vb2_queue *vq,
                vq->num_buffers, *nbuffers);
 
     *nbuffers = dev->frm_cnt;
+
 //    if(*nbuffers < dev->frm_cnt)
 //    {
 //        *nbuffers = dev->frm_cnt;
@@ -753,7 +780,7 @@ static int xrcc_cam_video_config(xrcc_cam_dev_t *dev)
     dev->queue.buf_struct_size    = sizeof(xrcc_dma_buffer_t);
     dev->queue.ops                = &xrcc_cam_queue_qops;
     dev->queue.mem_ops            = &vb2_dma_contig_memops;
-//    dev->queue.min_buffers_needed = dev->frm_cnt;
+    dev->queue.min_buffers_needed = dev->frm_cnt;
     dev->queue.timestamp_flags    =
         V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC | V4L2_BUF_FLAG_TSTAMP_SRC_EOF;
     dev->queue.dev = xrcc_dev_to_dev(dev);
@@ -950,17 +977,6 @@ static int xrcc_cam_probe(struct platform_device *pdev)
     }
 
 #ifdef VIDEO_CTRL_INTEGRATED
-    // Map also Video controller
-    {
-        const uint32_t cVideoCtrlAddr   = 0x43C10000;
-
-        xrcc_dev->video_ctrl_mem = ioremap(cVideoCtrlAddr, 100);
-        XRCC_INFO(xrcc_dev_to_dev(xrcc_dev), "Mapped video controller, version: 0x%08x",
-                  video_ctrl_version(xrcc_dev));
-    }
-#endif
-
-#ifdef VIDEO_CTRL_INTEGRATED
     // Request and map alos interrupt
     XRCC_DEBUG(xrcc_dev_to_dev(xrcc_dev), "RCC Camera requesting IRQ");
     xrcc_dev->frame_ptr_irq = platform_get_irq(pdev, 0);
@@ -972,6 +988,25 @@ static int xrcc_cam_probe(struct platform_device *pdev)
         XRCC_ERR(xrcc_dev_to_dev(xrcc_dev), "Can not request IRQ %d\n",
                  xrcc_dev->frame_ptr_irq);
         return err;
+    }
+#endif
+
+#ifdef VDMA_CTRL_INTEGRATED
+    // Map also VDMA controller
+    {
+        const uint32_t cVdmaCtrlAddr = 0x43000000;
+
+        xrcc_dev->vdma_ctrl_mem = ioremap(cVdmaCtrlAddr, 0xFF);
+        if(!xrcc_dev->vdma_ctrl_mem)
+        {
+            XRCC_ERR(xrcc_dev_to_dev(xrcc_dev),
+                     "VDMA control ioremap() fails");
+        }
+        else
+        {
+            XRCC_INFO(xrcc_dev_to_dev(xrcc_dev), "VDMA control version: 0x%08x",
+                      vdma_ctrl_version(xrcc_dev));
+        }
     }
 #endif
 

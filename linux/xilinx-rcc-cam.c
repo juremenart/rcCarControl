@@ -32,17 +32,11 @@
 #define VIDEO_CTRL_INTEGRATED
 #define VDMA_CTRL_INTEGRATED
 
-#if defined(VIDEO_CTRL_INTEGRATED) && defined(VDMA_CTRL_INTEGRATED)
-#define USE_VECTOR_BUFFERS
-#endif
-
-#ifdef USE_VECTOR_BUFFERS
 typedef struct xrcc_cam_buf_s {
     struct vb2_v4l2_buffer *buf;
     dma_addr_t              addr;
     int                     registered;
 } xrcc_cam_buf_t;
-#endif
 
 typedef struct xrcc_cam_dev_s {
     // number of frame buffers, must be set only once at the beginning
@@ -59,11 +53,6 @@ typedef struct xrcc_cam_dev_s {
     struct media_device        media_dev;
     struct video_device        video;
 
-    /* DMA channel & transaction */
-    struct dma_chan                 *dma_chan;
-    struct dma_interleaved_template  xt;
-    struct completion                rx_cmp;
-
     /* Lock protection for format/queues/video */
     struct mutex               lock;
     struct v4l2_pix_format     format;
@@ -74,10 +63,7 @@ typedef struct xrcc_cam_dev_s {
 
     struct list_head           queued_bufs;
     spinlock_t                 queued_lock;
-
-#ifdef USE_VECTOR_BUFFERS
     xrcc_cam_buf_t            *vect_bufs;
-#endif
 
 #ifdef VIDEO_CTRL_INTEGRATED
     /* Video control registers */
@@ -387,100 +373,6 @@ static int vdma_ctrl_configure(xrcc_cam_dev_t *dev)
 
     return 0;
 }
-
-#else // VDMA_CTRL_INTEGRATED
-
-// use official xilinx_dma driver to configure VDMA HW
-
-static int xrcc_cam_configure_vdma(xrcc_cam_dev_t *dev)
-{
-    struct xilinx_vdma_config xil_vdma_config;
-    int err;
-
-    /* Configure Xilinx VDMA */
-    memset(&xil_vdma_config, 0, sizeof(struct xilinx_vdma_config));
-
-    xil_vdma_config.frm_cnt_en = 1;
-    xil_vdma_config.coalesc    = 1;//dev->frm_cnt;
-    xil_vdma_config.park       = 0;
-    xil_vdma_config.reset      = 1;
-
-    err = xilinx_vdma_channel_set_config(dev->dma_chan, &xil_vdma_config);
-    if(err)
-    {
-        XRCC_ERR(xrcc_dev_to_dev(dev),
-                 "Configuring Xilinx VDMA channel failed: %d", err);
-        return err;
-    }
-
-    return 0;
-}
-#endif // VDMA_CTRL_INTEGRATED
-
-static void dump_num_buffers(xrcc_cam_dev_t *dev, const char *text)
-{
-    int i = 0;
-    xrcc_dma_buffer_t *tmp, *ntmp;
-    char out_text[256];
-
-    list_for_each_entry_safe(tmp, ntmp, &dev->queued_bufs, queue) {
-        i++;
-    }
-
-    sprintf(&out_text[0], "%s number of buffers: %d", text, i);
-    XRCC_DEBUG(xrcc_dev_to_dev(dev), out_text);
-}
-
-
-static int xrcc_cam_add_channel(xrcc_cam_dev_t *dev,  const char *chan_name)
-{
-    struct dma_chan *chan;
-    int err;
-
-    // TODO: We are requesting axivdma1 (we define 2 in DTS eventhough
-    // in HW we had only one connected. This should be fixed but when I
-    // tried it I had problems and reverted to original DTS settings to
-    // at least be able to request chan successfully.
-    chan = dma_request_chan(xrcc_dev_to_dev(dev), "axivdma1");
-    if (IS_ERR(chan) || (chan == NULL)) {
-        err = PTR_ERR(chan);
-        XRCC_ERR(xrcc_dev_to_dev(dev),
-                "RX DMA channel not found, check dma-names in DT");
-        return err;
-    }
-
-    dev->dma_chan = chan;
-
-    XRCC_DEBUG(xrcc_dev_to_dev(dev), "Adding DMA channel: %s",
-               dma_chan_name(chan));
-
-    return 0;
-}
-
-#ifndef VDMA_CTRL_INTEGRATED
-static void xrcc_cam_rx_callback(void *param)
-{
-    xrcc_dma_buffer_t *buf = param;
-    xrcc_cam_dev_t *dev = (xrcc_cam_dev_t *)buf->xrcc_dev;
-
-    XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_rx_callback() start");
-
-    /* List elements in incomming vb2_buffer */
-    dump_num_buffers(dev, "xrcc_cam_rx_callback() start");
-
-    spin_lock(&dev->queued_lock);
-    list_del(&buf->queue);
-    spin_unlock(&dev->queued_lock);
-
-    buf->buf.field = V4L2_FIELD_NONE;
-    buf->buf.sequence = dev->sequence++;
-    buf->buf.vb2_buf.timestamp = ktime_get_ns();
-    vb2_set_plane_payload(&buf->buf.vb2_buf, 0, dev->format.sizeimage);
-    vb2_buffer_done(&buf->buf.vb2_buf, VB2_BUF_STATE_DONE);
-
-    dump_num_buffers(dev, "xrcc_cam_rx_callback() end");
-    XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_rx_callback() end");
-}
 #endif // VDMA_CTRL_INTEGRATED
 
 static int xrcc_cam_queue_setup(struct vb2_queue *vq,
@@ -531,8 +423,6 @@ static int xrcc_cam_buffer_prepare(struct vb2_buffer *vb)
 
     vb2_set_plane_payload(&buf->buf.vb2_buf, 0, size);
 
-    dump_num_buffers(dev, "xrcc_cam_buffer_prepare()");
-
     XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_buffer_prepare() end");
 
     return 0;
@@ -544,112 +434,42 @@ static void xrcc_cam_buffer_queue(struct vb2_buffer *vb)
     xrcc_cam_dev_t *dev = vb2_get_drv_priv(vb->vb2_queue);
     dma_addr_t addr = vb2_dma_contig_plane_dma_addr(vb, 0);
     xrcc_dma_buffer_t *buf = to_xrcc_dma_buffer(vbuf);
-
-#ifndef VDMA_CTRL_INTEGRATED
-    struct dma_async_tx_descriptor *desc;
-    dma_cookie_t rx_cookie;
-    u32 flags;
-    struct dma_device *dma_dev = dev->dma_chan->device;
-    int err;
-#endif // !VDMA_CTRL_INTEGRATED
+    // find the next free slot
+    int idx, found = 0;
 
     XRCC_DEBUG(xrcc_dev_to_dev(dev),
                "xrcc_cam_buffer_queue() start, buffer address=0x%08x",
                (uint32_t)addr);
 
-#ifdef USE_VECTOR_BUFFERS
-    {
-        // find the next free slot
-        int idx, found = 0;
-        spin_lock_irq(&dev->queued_lock);
-        for(idx = 0; idx < dev->frm_cnt; idx++)
-        {
-            if((dev->vect_bufs[idx].buf == NULL) ||
-               (dev->vect_bufs[idx].addr == addr))
-            {
-                found = 1;
-                break;
-            }
-        }
-
-        if(!found)
-        {
-            /* TODO: We should actually free all buffers */
-            XRCC_ERR(xrcc_dev_to_dev(dev),
-                     "xrcc_cam_buffer_queue(): Too many buffers?");
-            vb2_buffer_done(&buf->buf.vb2_buf, VB2_BUF_STATE_ERROR);
-            spin_unlock_irq(&dev->queued_lock);
-            return;
-        }
-
-        dev->vect_bufs[idx].buf        = vbuf;
-        dev->vect_bufs[idx].addr       = addr;
-        dev->vect_bufs[idx].registered = 1;
-
-        spin_unlock_irq(&dev->queued_lock);
-        XRCC_DEBUG(xrcc_dev_to_dev(dev),
-                   "xrcc_cam_buffer_queue() start, address=0x%08x added to %d index",
-                   (uint32_t)addr, idx);
-    }
-#endif
-
-#ifndef VDMA_CTRL_INTEGRATED
-    err = xrcc_cam_configure_vdma(dev);
-    if(err)
-    {
-        XRCC_ERR(xrcc_dev_to_dev(dev),
-                 "xrcc_cam_buffer_queue(): Configuring VDMA failed");
-        vb2_buffer_done(&buf->buf.vb2_buf, VB2_BUF_STATE_ERROR);
-        return;
-    }
-
-        // Map allocated buffers to DMA addresses
-    dev->xt.dir         = DMA_DEV_TO_MEM;
-    dev->xt.sgl[0].size = dev->format.width * dev->bpp;
-    dev->xt.sgl[0].icg  = 0;
-//    dev->xt.sgl[0].icg  = dev->format.bytesperline - dev->xt.sgl[0].size;
-    dev->xt.frame_size  = 1;
-    dev->xt.numf        = dev->format.height;
-
-    flags = DMA_CTRL_ACK | DMA_PREP_INTERRUPT;
-
-    // TODO: Add dst_start address - but we would like to have tripple buffer?!
-    dev->xt.dst_start = addr;
-
-    desc = dma_dev->device_prep_interleaved_dma(dev->dma_chan, &dev->xt, flags);
-    if(!desc)
-    {
-        XRCC_ERR(xrcc_dev_to_dev(dev), "Failed to prepare DMA transfer");
-        vb2_buffer_done(&buf->buf.vb2_buf, VB2_BUF_STATE_ERROR);
-        return;
-    }
-
-    desc->callback = xrcc_cam_rx_callback;
-    desc->callback_param = buf;
-
     spin_lock_irq(&dev->queued_lock);
-    list_add_tail(&buf->queue, &dev->queued_bufs);
-    spin_unlock_irq(&dev->queued_lock);
-
-    rx_cookie = desc->tx_submit(desc);
-    if(dma_submit_error(rx_cookie))
+    for(idx = 0; idx < dev->frm_cnt; idx++)
     {
-        XRCC_ERR(xrcc_dev_to_dev(dev), "Submit error, rx_cookie: %d",
-                 rx_cookie);
+        if((dev->vect_bufs[idx].buf == NULL) ||
+           (dev->vect_bufs[idx].addr == addr))
+        {
+            found = 1;
+            break;
+        }
+    }
+
+    if(!found)
+    {
+        /* TODO: We should actually free all buffers */
+        XRCC_ERR(xrcc_dev_to_dev(dev),
+                 "xrcc_cam_buffer_queue(): Too many buffers?");
+        vb2_buffer_done(&buf->buf.vb2_buf, VB2_BUF_STATE_ERROR);
+        spin_unlock_irq(&dev->queued_lock);
         return;
     }
 
-    if(vb2_is_streaming(&dev->queue))
-    {
-        XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_buffer_queue()"
-                   " still streaming request pending transactions");
-        dma_async_issue_pending(dev->dma_chan);
-    }
-#endif // !VDMA_CTRL_INTEGRATED
+    dev->vect_bufs[idx].buf        = vbuf;
+    dev->vect_bufs[idx].addr       = addr;
+    dev->vect_bufs[idx].registered = 1;
 
-
-    /* List elements in incomming vb2_buffer */
-    dump_num_buffers(dev, "xrcc_cam_buffer_queue() end");
+    spin_unlock_irq(&dev->queued_lock);
+    XRCC_DEBUG(xrcc_dev_to_dev(dev),
+               "xrcc_cam_buffer_queue() start, address=0x%08x added to %d index",
+               (uint32_t)addr, idx);
 
     XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_buffer_queue() end");
 }
@@ -670,18 +490,10 @@ static int xrcc_cam_start_streaming(struct vb2_queue *vq, unsigned int count)
 
     dev->sequence = 0;
 
-#ifndef VDMA_CTRL_INTEGRATED
-    /* Start the DMA engine. This must be done before starting the blocks
-     * in the pipeline to avoid DMA synchronization issues.
-     */
-    dma_async_issue_pending(dev->dma_chan);
-#endif // VDMA_CTRL_INTEGRATED
-
-#ifdef USE_VECTOR_BUFFERS
     // We have everything we need - we have all buffers reserved
     // so we should configure VDMA engine and started the stream
     vdma_ctrl_configure(dev);
-#endif
+
 #ifdef VIDEO_CTRL_INTEGRATED
     video_ctrl_set_size(dev, dev->width, dev->height, dev->bpp);
     video_ctrl_run(dev);
@@ -697,9 +509,10 @@ static int xrcc_cam_start_streaming(struct vb2_queue *vq, unsigned int count)
 static void xrcc_cam_stop_streaming(struct vb2_queue *vq)
 {
     xrcc_cam_dev_t *dev = vb2_get_drv_priv(vq);
-
-#ifdef USE_VECTOR_BUFFERS
     int i;
+
+    XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_stop_streaming()");
+
     for(i = 0; i < dev->frm_cnt; i++)
     {
         spin_lock_irq(&dev->queued_lock);
@@ -715,9 +528,7 @@ static void xrcc_cam_stop_streaming(struct vb2_queue *vq)
         spin_unlock_irq(&dev->queued_lock);
     }
     vdma_ctrl_reset(dev);
-#endif
 
-    XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_stop_streaming()");
 
 
 #ifdef VIDEO_CTRL_INTEGRATED
@@ -725,19 +536,6 @@ static void xrcc_cam_stop_streaming(struct vb2_queue *vq)
     video_ctrl_dump_meas(dev);
     video_ctrl_stop(dev);
 #endif
-
-#ifndef USE_VECTOR_BUFFERS
-    {
-        xrcc_dma_buffer_t *buf, *nbuf;
-
-        spin_lock_irq(&dev->queued_lock);
-        list_for_each_entry_safe(buf, nbuf, &dev->queued_bufs, queue) {
-            vb2_buffer_done(&buf->buf.vb2_buf, VB2_BUF_STATE_ERROR);
-            list_del(&buf->queue);
-        }
-        spin_unlock_irq(&dev->queued_lock);
-    }
-#endif // USE_VECTOR_BUFFERS
 }
 
 static const struct vb2_ops xrcc_cam_queue_qops = {
@@ -1094,11 +892,6 @@ static int xrcc_cam_video_config(xrcc_cam_dev_t *dev)
 
 static int xrcc_cam_v4l2_cleanup(xrcc_cam_dev_t *dev)
 {
-    if(!IS_ERR(dev->dma_chan))
-    {
-
-    }
-
     v4l2_device_unregister(&dev->v4l2_dev);
     media_device_unregister(&dev->media_dev);
     media_device_cleanup(&dev->media_dev);
@@ -1137,14 +930,6 @@ static int xrcc_cam_cleanup(xrcc_cam_dev_t *dev)
 
     xrcc_cam_v4l2_cleanup(dev);
 
-    if(dev->dma_chan)
-    {
-        XRCC_DEBUG(xrcc_dev_to_dev(dev), "Releasing DMA channel: %s",
-                 dma_chan_name(dev->dma_chan));
-        dma_release_channel(dev->dma_chan);
-        dev->dma_chan = NULL;
-    }
-
     return 0;
 }
 
@@ -1171,31 +956,6 @@ static int xrcc_cam_v4l2_init(xrcc_cam_dev_t *dev)
 
     XRCC_DEBUG(xrcc_dev_to_dev(dev), "V4L2 device registered");
 
-    return 0;
-}
-
-static int xrcc_cam_vdma_reset(xrcc_cam_dev_t *dev)
-{
-    int err;
-    struct xilinx_vdma_config xil_vdma_config;
-
-    /* Configure Xilinx VDMA */
-    memset(&xil_vdma_config, 0, sizeof(struct xilinx_vdma_config));
-
-    xil_vdma_config.frm_cnt_en = 1;
-    xil_vdma_config.coalesc    = 1;//dev->frm_cnt;
-    xil_vdma_config.park       = 0;
-    xil_vdma_config.reset      = 1;
-
-    err = xilinx_vdma_channel_set_config(dev->dma_chan, &xil_vdma_config);
-    if(err)
-    {
-        XRCC_ERR(xrcc_dev_to_dev(dev),
-                 "Resetting Xilinx VDMA channel failed: %d", err);
-        return err;
-    }
-
-    /* In theory we should sleep a little bit... :) */
     return 0;
 }
 
@@ -1241,13 +1001,6 @@ static int xrcc_cam_probe(struct platform_device *pdev)
     xrcc_dev->height  = height;
     xrcc_dev->bpp     = bpp;
 
-    err = xrcc_cam_add_channel(xrcc_dev, "axivdma1");
-    if(err)
-    {
-        XRCC_ERR(&pdev->dev, "Unable to add channels");
-        goto probe_err_exit;
-    }
-
     err = xrcc_cam_v4l2_init(xrcc_dev);
     if(err)
     {
@@ -1259,14 +1012,6 @@ static int xrcc_cam_probe(struct platform_device *pdev)
     if(err)
     {
         XRCC_ERR(xrcc_dev_to_dev(xrcc_dev), "Problem configuring the video settings");
-        goto probe_err_exit;
-    }
-
-    // Reset the VDMA
-    err = xrcc_cam_vdma_reset(xrcc_dev);
-    if(err)
-    {
-        XRCC_ERR(xrcc_dev_to_dev(xrcc_dev), "Problem reseting VDMA controller");
         goto probe_err_exit;
     }
 
@@ -1308,12 +1053,13 @@ static int xrcc_cam_probe(struct platform_device *pdev)
             return err;
         }
 
+        vdma_ctrl_reset(xrcc_dev);
+
         XRCC_DEBUG(xrcc_dev_to_dev(xrcc_dev), "VDMA control version: 0x%08x",
                    vdma_ctrl_version(xrcc_dev));
     }
 #endif
 
-#ifdef USE_VECTOR_BUFFERS
     xrcc_dev->vect_bufs =
         (xrcc_cam_buf_t *)devm_kzalloc(&pdev->dev,
                                        sizeof(xrcc_cam_buf_t)*xrcc_dev->frm_cnt,
@@ -1324,7 +1070,6 @@ static int xrcc_cam_probe(struct platform_device *pdev)
                  "Can not locate vector buffers");
         return -ENOMEM;
     }
-#endif
     memset(xrcc_dev->vect_bufs, 0, sizeof(xrcc_cam_buf_t)*xrcc_dev->frm_cnt);
 
     XRCC_INFO(xrcc_dev_to_dev(xrcc_dev), "RCC Camera Driver Probed");

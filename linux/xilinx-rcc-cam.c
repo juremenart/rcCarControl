@@ -25,7 +25,8 @@
 #include <media/videobuf2-v4l2.h>
 #include <media/videobuf2-dma-contig.h>
 
-#define XRCC_DEBUG(...) dev_info(__VA_ARGS__)
+//#define XRCC_DEBUG(...) dev_info(__VA_ARGS__)
+#define XRCC_DEBUG(...)
 #define XRCC_INFO(...)  dev_info(__VA_ARGS__)
 #define XRCC_ERR(...)   dev_err(__VA_ARGS__)
 

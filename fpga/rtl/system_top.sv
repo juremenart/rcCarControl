@@ -117,8 +117,8 @@ module bd_system_wrapper
 
    wire         cam_pclk_gclk;
 
-   wire         s2mm_frame_ptr_in;
-   wire         s2mm_frame_ptr_out;
+   wire [5:0]   s2mm_frame_ptr_in;
+   wire [5:0]   s2mm_frame_ptr_out;
    wire         vdma_frame_int;
 
 

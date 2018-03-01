@@ -62,6 +62,8 @@
                 compatible = "xlnx,rcc-cam-1.0";
                 dmas = <&axi_vdma_0 0 &axi_vdma_0 1>;
                 dma-names = "axivdma0", "axivdma1";
+                interrupt-parent = <&intc>;
+                interrupts = <0 30 4>;
         };
 
         amba {
@@ -78,7 +80,7 @@
 			xlnx,num-fstores = <0x3>;
 			dma-channel@43000000 {
 				compatible = "xlnx,axi-vdma-mm2s-channel";
-				interrupts = <0 30 4>;
+				interrupts = <0 31 4>;
 				xlnx,datawidth = <0x8>;
 				xlnx,device-id = <0x0>;
 				xlnx,genlock-mode ;

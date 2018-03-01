@@ -10,6 +10,7 @@
 #include <linux/module.h>
 #include <linux/of_dma.h>
 #include <linux/platform_device.h>
+#include <linux/interrupt.h>
 #include <linux/random.h>
 #include <linux/slab.h>
 #include <linux/wait.h>
@@ -66,7 +67,9 @@ typedef struct xrcc_cam_dev_s {
     /* Video control registers */
     /* TODO: Do this properly with it's own driver! */
     void __iomem              *video_ctrl_mem;
+    int                        frame_ptr_irq;
 #endif
+
 } xrcc_cam_dev_t;
 
 typedef struct xrcc_dma_buffer_s {
@@ -93,6 +96,8 @@ static struct device *xrcc_dev_to_dev(xrcc_cam_dev_t *dev)
 #define VIDEO_CTRL_RX_FIFO_CTRL  0x1C
 
 #define VIDEO_CTRL_RX_CTRL_RUN   0x01
+#define VIDEO_CTRL_RX_CTRL_INTEN 0x10
+#define VIDEO_CTRL_RX_CTRL_INT   0x20
 
 static inline u32 video_ctrl_read(xrcc_cam_dev_t *dev, u32 reg)
 {
@@ -119,6 +124,22 @@ static inline void video_ctrl_set_size(xrcc_cam_dev_t *dev, int width,
 static inline u32 video_ctrl_version(xrcc_cam_dev_t *dev)
 {
     return video_ctrl_read(dev, VIDEO_CTRL_VERSION);
+}
+
+static inline void video_ctrl_inten(xrcc_cam_dev_t *dev, int int_enable)
+{
+    int ctrl = video_ctrl_read(dev, VIDEO_CTRL_RX_CTRL);
+
+    if(int_enable)
+    {
+        video_ctrl_write(dev, VIDEO_CTRL_RX_CTRL,
+                         ctrl | VIDEO_CTRL_RX_CTRL_INTEN);
+    }
+    else
+    {
+        video_ctrl_write(dev, VIDEO_CTRL_RX_CTRL,
+                         ctrl & ~VIDEO_CTRL_RX_CTRL_INTEN);
+    }
 }
 
 static inline void video_ctrl_run(xrcc_cam_dev_t *dev)
@@ -243,6 +264,7 @@ static int xrcc_cam_queue_setup(struct vb2_queue *vq,
                "xrcc_cam_queue_setup() start, num_buffers=%d nbuffers=%d",
                vq->num_buffers, *nbuffers);
 
+    *nbuffers = dev->frm_cnt;
 //    if(*nbuffers < dev->frm_cnt)
 //    {
 //        *nbuffers = dev->frm_cnt;
@@ -393,6 +415,7 @@ static int xrcc_cam_start_streaming(struct vb2_queue *vq, unsigned int count)
     video_ctrl_set_size(dev, dev->width, dev->height, dev->bpp);
     video_ctrl_run(dev);
     video_ctrl_clear_err(dev);
+    video_ctrl_inten(dev, 1);
 
     video_ctrl_dump_meas(dev);
 #endif
@@ -408,6 +431,7 @@ static void xrcc_cam_stop_streaming(struct vb2_queue *vq)
     XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_stop_streaming()");
 
 #ifdef VIDEO_CTRL_INTEGRATED
+    video_ctrl_inten(dev, 0);
     video_ctrl_dump_meas(dev);
     video_ctrl_stop(dev);
 #endif
@@ -658,6 +682,29 @@ static const struct v4l2_file_operations xrcc_cam_dma_fops = {
     .mmap           = vb2_fop_mmap,
 };
 
+#ifdef VIDEO_CTRL_INTEGRATED
+static irqreturn_t xrcc_cam_irq_handler(int irq, void *data)
+{
+    xrcc_cam_dev_t *dev = data;
+    u32 rx_ctrl_reg = video_ctrl_read(dev, VIDEO_CTRL_RX_CTRL);
+
+    XRCC_DEBUG(xrcc_dev_to_dev(dev),
+               "xrcc_cam_irq_handler() rx_ctrl_reg=0x%08x",
+               rx_ctrl_reg);
+
+    // Clear interrupt
+    video_ctrl_write(dev, VIDEO_CTRL_RX_CTRL, rx_ctrl_reg);
+
+    rx_ctrl_reg = video_ctrl_read(dev, VIDEO_CTRL_RX_CTRL);
+
+    XRCC_DEBUG(xrcc_dev_to_dev(dev),
+               "xrcc_cam_irq_handler() cleaned rx_ctrl_reg=0x%08x",
+               rx_ctrl_reg);
+
+    return IRQ_HANDLED;
+}
+#endif
+
 static int xrcc_cam_video_config(xrcc_cam_dev_t *dev)
 {
     int err = 0;
@@ -748,6 +795,9 @@ static int xrcc_cam_cleanup(xrcc_cam_dev_t *dev)
     {
         return 0;
     }
+
+    if (dev->frame_ptr_irq > 0)
+        free_irq(dev->frame_ptr_irq, dev);
 
     vb2_queue_release(&dev->queue);
 
@@ -907,6 +957,21 @@ static int xrcc_cam_probe(struct platform_device *pdev)
         xrcc_dev->video_ctrl_mem = ioremap(cVideoCtrlAddr, 100);
         XRCC_INFO(xrcc_dev_to_dev(xrcc_dev), "Mapped video controller, version: 0x%08x",
                   video_ctrl_version(xrcc_dev));
+    }
+#endif
+
+#ifdef VIDEO_CTRL_INTEGRATED
+    // Request and map alos interrupt
+    XRCC_DEBUG(xrcc_dev_to_dev(xrcc_dev), "RCC Camera requesting IRQ");
+    xrcc_dev->frame_ptr_irq = platform_get_irq(pdev, 0);
+    err = devm_request_irq(xrcc_dev->dev, xrcc_dev->frame_ptr_irq,
+                           xrcc_cam_irq_handler,
+                           IRQF_SHARED, "xrcc-cam", xrcc_dev);
+    if(err)
+    {
+        XRCC_ERR(xrcc_dev_to_dev(xrcc_dev), "Can not request IRQ %d\n",
+                 xrcc_dev->frame_ptr_irq);
+        return err;
     }
 #endif
 

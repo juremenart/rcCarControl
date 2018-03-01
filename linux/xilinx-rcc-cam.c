@@ -32,6 +32,18 @@
 #define VIDEO_CTRL_INTEGRATED
 #define VDMA_CTRL_INTEGRATED
 
+#if defined(VIDEO_CTRL_INTEGRATED) && defined(VDMA_CTRL_INTEGRATED)
+#define USE_VECTOR_BUFFERS
+#endif
+
+#ifdef USE_VECTOR_BUFFERS
+typedef struct xrcc_cam_buf_s {
+    struct vb2_v4l2_buffer *buf;
+    dma_addr_t              addr;
+    int                     registered;
+} xrcc_cam_buf_t;
+#endif
+
 typedef struct xrcc_cam_dev_s {
     // number of frame buffers, must be set only once at the beginning
     // TODO: Check if not better to have size/bpp/buf_size info only in
@@ -63,6 +75,9 @@ typedef struct xrcc_cam_dev_s {
     struct list_head           queued_bufs;
     spinlock_t                 queued_lock;
 
+#ifdef USE_VECTOR_BUFFERS
+    xrcc_cam_buf_t            *vect_bufs;
+#endif
 
 #ifdef VIDEO_CTRL_INTEGRATED
     /* Video control registers */
@@ -103,6 +118,13 @@ static struct device *xrcc_dev_to_dev(xrcc_cam_dev_t *dev)
 #define VIDEO_CTRL_RX_CTRL_INTEN 0x10
 #define VIDEO_CTRL_RX_CTRL_INT   0x20
 
+// Write pointer - last pointer that was written by VDMA
+#define VIDEO_CTRL_WR_PTR_SHIFT  24
+// Read pointer - can be set by this driver to protect one buffer (which
+// is used by userspace for example) - if set to 0 no buffer is protected
+#define VIDEO_CTRL_RD_PTR_SHIFT  16
+#define VIDEO_CTRL_PTR_MASK      0x3F // Mask for pointers - we have 6 bits for each
+
 static inline u32 video_ctrl_read(xrcc_cam_dev_t *dev, u32 reg)
 {
     return ioread32(dev->video_ctrl_mem + reg);
@@ -141,8 +163,11 @@ static inline void video_ctrl_inten(xrcc_cam_dev_t *dev, int int_enable)
     }
     else
     {
-        video_ctrl_write(dev, VIDEO_CTRL_RX_CTRL,
-                         ctrl & ~VIDEO_CTRL_RX_CTRL_INTEN);
+        ctrl &= ~VIDEO_CTRL_RX_CTRL_INTEN;
+        video_ctrl_write(dev, VIDEO_CTRL_RX_CTRL, ctrl);
+
+        // Clear also potential interrupts
+        video_ctrl_write(dev, VIDEO_CTRL_RX_CTRL, ctrl | VIDEO_CTRL_RX_CTRL_INT);
     }
 }
 
@@ -191,21 +216,97 @@ static void video_ctrl_dump_meas(xrcc_cam_dev_t *dev)
     XRCC_DEBUG(xrcc_dev_to_dev(dev), "\tframe_cnt=%d", frame_cnt);
     XRCC_DEBUG(xrcc_dev_to_dev(dev), "\tframe_len=%d", frame_len);
 }
+
+/* Hardcoded 6-bit conversion & specific for VDMA */
+static u32 video_gray2bin(const u32 gray, const u32 frm_cnts)
+{
+    u32 bin = gray & (1<<5);
+    int i;
+
+    for(i = 4; i >= 0; i--)
+    {
+        u32 bin_b = ((gray & (1<<i))>>i) ^ (bin>>(i+1));
+        bin |= (bin_b << i);
+    }
+
+    bin = bin -1; // Gray reall starts with 1
+    bin = bin % frm_cnts; // Gray in VDMA is always ^2 and we should wrap
+
+    return bin;
+}
+
+static u32 video_bin2gray(const u32 bin)
+{
+    u32 binp = bin+1;
+    u32 gray = (binp & 0x1f) ^ ((binp >> 1) & 0x1f);
+
+    gray |= binp & 0x20;
+
+    return gray;
+}
+
+/* Write pointer readout & gray to bin conversion to get index */
+static u32 video_ctrl_get_idx(const u32 status_val, const u32 frm_cnts)
+{
+    int gray = (status_val >> VIDEO_CTRL_WR_PTR_SHIFT) & VIDEO_CTRL_PTR_MASK;
+
+    return video_gray2bin(gray, frm_cnts);
+}
+
+/* Read pointer setting + conversion bin2gray */
+static u32 video_ctrl_set_ptr(const u32 index)
+{
+    int bin = (index & VIDEO_CTRL_PTR_MASK) << VIDEO_CTRL_RD_PTR_SHIFT;
+
+    return video_bin2gray(bin);
+}
+
 #endif
 
 #ifdef VDMA_CTRL_INTEGRATED
-
+/* TODO: This is really ugly hack - xilinx-vdma driver is not working as I'd
+ * expect and would want for my system so instead of writting new full driver I
+ * am adding this hack for now to configure the VDMA engine as I'd expect
+ * In the end this should be separate xilinx-vdma driver and also for the video
+ * controller (see VIDEO_CTRL_INTEGRATED)
+ */
 #define VDMA_CTRL_VERSION_REG 0x2C
+
+/* Supporting only S2MM */
+#define VDMA_CTRL_DMACR         0x30
+#define VDMA_CTRL_DMASR         0x34
+#define VDMA_CTRL_REG_INDEX     0x44
+#define VDMA_CTRL_VSIZE         0xA0
+#define VDMA_CTRL_HSIZE         0xA4
+#define VDMA_CTRL_FRMDLY_STRIDE 0xA8
+#define VDMA_CTRL_ST_ADDR       0xAC // Start address
+
+#define VDMA_CTRL_DMACR_RUN          0x0001
+#define VDMA_CTRL_DMACR_CIRCPARK     0x0002
+#define VDMA_CTRL_DMACR_RESET        0x0004
+#define VDMA_CTRL_DMACR_GENLOCK_EN   0x0008
+#define VDMA_CTRL_DMACR_ERR_IRQEN    0x4000
+
+#define VDMA_CTRL_DMASR_HALTED        0x0001
+#define VDMA_CTRL_DMASR_INT_ERR       0x0010
+#define VDMA_CTRL_DMASR_SLV_ERR       0x0020
+#define VDMA_CTRL_DMASR_DEC_ERR       0x0040
+#define VDMA_CTRL_DMASR_SOF_EARLY_ERR 0x0080
+#define VDMA_CTRL_DMASR_EOL_EARLY_ERR 0x0100
+#define VDMA_CTRL_DMASR_SOF_LATE_ERR  0x0800
+#define VDMA_CTRL_DMASR_FRM_CNT_IRQ   0x1000
+#define VDMA_CTRL_DMASR_DLY_CNT_IRQ   0x2000
+#define VDMA_CTRL_DMASR_ERR_IRQ       0x4000
+#define VDMA_CTRL_DMASR_EOL_LATE_ERR  0x8000
 
 static inline u32 vdma_ctrl_read(xrcc_cam_dev_t *dev, u32 reg)
 {
-    if(dev->vdma_ctrl_mem)
-        return ioread32(dev->vdma_ctrl_mem + reg);
-    else
-    {
-        XRCC_ERR(xrcc_dev_to_dev(dev), "vdma_ctrl_read() memory not mapped!");
-        return 0;
-    }
+    return ioread32(dev->vdma_ctrl_mem + reg);
+}
+
+static inline void vdma_ctrl_write(xrcc_cam_dev_t *dev, u32 reg, u32 value)
+{
+    iowrite32(value, dev->vdma_ctrl_mem + reg);
 }
 
 static inline u32 vdma_ctrl_version(xrcc_cam_dev_t *dev)
@@ -213,7 +314,108 @@ static inline u32 vdma_ctrl_version(xrcc_cam_dev_t *dev)
     return vdma_ctrl_read(dev, VDMA_CTRL_VERSION_REG);
 }
 
-#endif
+static inline void vdma_ctrl_reset(xrcc_cam_dev_t *dev)
+{
+    u32 status;
+
+    vdma_ctrl_write(dev, VDMA_CTRL_DMACR, VDMA_CTRL_DMACR_RESET);
+
+    status = vdma_ctrl_read(dev, VDMA_CTRL_DMACR);
+    while(status & VDMA_CTRL_DMACR_RESET)
+    {
+        status = vdma_ctrl_read(dev, VDMA_CTRL_DMACR);
+    }
+}
+
+static inline void vdma_ctrl_run(xrcc_cam_dev_t *dev)
+{
+    u32 status = vdma_ctrl_read(dev, VDMA_CTRL_DMACR);
+
+    vdma_ctrl_write(dev, VDMA_CTRL_DMACR, status | VDMA_CTRL_DMACR_RUN);
+
+    status = vdma_ctrl_read(dev, VDMA_CTRL_DMASR);
+    while(status & VDMA_CTRL_DMASR_HALTED)
+    {
+        status = vdma_ctrl_read(dev, VDMA_CTRL_DMASR);
+    }
+}
+
+static int vdma_ctrl_configure(xrcc_cam_dev_t *dev)
+{
+    u32 i;
+
+    XRCC_DEBUG(xrcc_dev_to_dev(dev),
+               "vdma_ctrl_configure(): Resettting VDMA");
+
+    /* Reset the engine */
+    vdma_ctrl_reset(dev);
+
+    XRCC_DEBUG(xrcc_dev_to_dev(dev),
+               "vdma_ctrl_configure(): Setting the DMACR register");
+
+    /* Start VDMA & wait for it to be started */
+    vdma_ctrl_write(dev, VDMA_CTRL_DMACR,
+                    VDMA_CTRL_DMACR_GENLOCK_EN |
+                    VDMA_CTRL_DMACR_CIRCPARK | VDMA_CTRL_DMACR_ERR_IRQEN);
+    vdma_ctrl_run(dev);
+
+    /* Reset reg index */
+    vdma_ctrl_write(dev, VDMA_CTRL_REG_INDEX, 0);
+
+    /* Fill in all buffer addresses */
+    for(i = 0; i < dev->frm_cnt; i++)
+    {
+        if((dev->vect_bufs[i].buf == NULL) ||
+           (dev->vect_bufs[i].addr == 0))
+        {
+            XRCC_ERR(xrcc_dev_to_dev(dev),
+                     "vdma_ctrl_configure(): Not all buffers are initialized");
+            vdma_ctrl_reset(dev);
+            return -EINVAL;
+        }
+
+        vdma_ctrl_write(dev, VDMA_CTRL_ST_ADDR + (i*4),
+                        dev->vect_bufs[i].addr);
+    }
+
+    /* Set HSIZE & FRMDLY_STRIDE */
+    vdma_ctrl_write(dev, VDMA_CTRL_HSIZE, (dev->width * dev->bpp));
+    vdma_ctrl_write(dev, VDMA_CTRL_FRMDLY_STRIDE, (dev->width * dev->bpp));
+
+    // Set VSIZE - MUST BE LAST! */
+    vdma_ctrl_write(dev, VDMA_CTRL_VSIZE, dev->height);
+
+    return 0;
+}
+
+#else // VDMA_CTRL_INTEGRATED
+
+// use official xilinx_dma driver to configure VDMA HW
+
+static int xrcc_cam_configure_vdma(xrcc_cam_dev_t *dev)
+{
+    struct xilinx_vdma_config xil_vdma_config;
+    int err;
+
+    /* Configure Xilinx VDMA */
+    memset(&xil_vdma_config, 0, sizeof(struct xilinx_vdma_config));
+
+    xil_vdma_config.frm_cnt_en = 1;
+    xil_vdma_config.coalesc    = 1;//dev->frm_cnt;
+    xil_vdma_config.park       = 0;
+    xil_vdma_config.reset      = 1;
+
+    err = xilinx_vdma_channel_set_config(dev->dma_chan, &xil_vdma_config);
+    if(err)
+    {
+        XRCC_ERR(xrcc_dev_to_dev(dev),
+                 "Configuring Xilinx VDMA channel failed: %d", err);
+        return err;
+    }
+
+    return 0;
+}
+#endif // VDMA_CTRL_INTEGRATED
 
 static void dump_num_buffers(xrcc_cam_dev_t *dev, const char *text)
 {
@@ -255,6 +457,7 @@ static int xrcc_cam_add_channel(xrcc_cam_dev_t *dev,  const char *chan_name)
     return 0;
 }
 
+#ifndef VDMA_CTRL_INTEGRATED
 static void xrcc_cam_rx_callback(void *param)
 {
     xrcc_dma_buffer_t *buf = param;
@@ -278,6 +481,7 @@ static void xrcc_cam_rx_callback(void *param)
     dump_num_buffers(dev, "xrcc_cam_rx_callback() end");
     XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_rx_callback() end");
 }
+#endif // VDMA_CTRL_INTEGRATED
 
 static int xrcc_cam_queue_setup(struct vb2_queue *vq,
                                 unsigned int *nbuffers, unsigned int *nplanes,
@@ -291,11 +495,6 @@ static int xrcc_cam_queue_setup(struct vb2_queue *vq,
                vq->num_buffers, *nbuffers);
 
     *nbuffers = dev->frm_cnt;
-
-//    if(*nbuffers < dev->frm_cnt)
-//    {
-//        *nbuffers = dev->frm_cnt;
-//    }
 
     /* Make sure the image size is large enough. */
     if(*nplanes)
@@ -343,39 +542,68 @@ static void xrcc_cam_buffer_queue(struct vb2_buffer *vb)
 {
     struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
     xrcc_cam_dev_t *dev = vb2_get_drv_priv(vb->vb2_queue);
-    xrcc_dma_buffer_t *buf = to_xrcc_dma_buffer(vbuf);
-    struct dma_async_tx_descriptor *desc;
     dma_addr_t addr = vb2_dma_contig_plane_dma_addr(vb, 0);
-    u32 flags;
+    xrcc_dma_buffer_t *buf = to_xrcc_dma_buffer(vbuf);
 
-    struct xilinx_vdma_config xil_vdma_config;
-    struct dma_device *dma_dev = dev->dma_chan->device;
+#ifndef VDMA_CTRL_INTEGRATED
+    struct dma_async_tx_descriptor *desc;
     dma_cookie_t rx_cookie;
+    u32 flags;
+    struct dma_device *dma_dev = dev->dma_chan->device;
     int err;
+#endif // !VDMA_CTRL_INTEGRATED
 
     XRCC_DEBUG(xrcc_dev_to_dev(dev),
                "xrcc_cam_buffer_queue() start, buffer address=0x%08x",
                (uint32_t)addr);
 
+#ifdef USE_VECTOR_BUFFERS
+    {
+        // find the next free slot
+        int idx, found = 0;
+        spin_lock_irq(&dev->queued_lock);
+        for(idx = 0; idx < dev->frm_cnt; idx++)
+        {
+            if((dev->vect_bufs[idx].buf == NULL) ||
+               (dev->vect_bufs[idx].addr == addr))
+            {
+                found = 1;
+                break;
+            }
+        }
 
-    dump_num_buffers(dev, "xrcc_cam_buffer_queue() start");
-    /* Configure Xilinx VDMA */
-    memset(&xil_vdma_config, 0, sizeof(struct xilinx_vdma_config));
+        if(!found)
+        {
+            /* TODO: We should actually free all buffers */
+            XRCC_ERR(xrcc_dev_to_dev(dev),
+                     "xrcc_cam_buffer_queue(): Too many buffers?");
+            vb2_buffer_done(&buf->buf.vb2_buf, VB2_BUF_STATE_ERROR);
+            spin_unlock_irq(&dev->queued_lock);
+            return;
+        }
 
-    xil_vdma_config.frm_cnt_en = 1;
-    xil_vdma_config.coalesc    = 1;//dev->frm_cnt;
-    xil_vdma_config.park       = 0;
-    xil_vdma_config.reset      = 1;
+        dev->vect_bufs[idx].buf        = vbuf;
+        dev->vect_bufs[idx].addr       = addr;
+        dev->vect_bufs[idx].registered = 1;
 
-    err = xilinx_vdma_channel_set_config(dev->dma_chan, &xil_vdma_config);
+        spin_unlock_irq(&dev->queued_lock);
+        XRCC_DEBUG(xrcc_dev_to_dev(dev),
+                   "xrcc_cam_buffer_queue() start, address=0x%08x added to %d index",
+                   (uint32_t)addr, idx);
+    }
+#endif
+
+#ifndef VDMA_CTRL_INTEGRATED
+    err = xrcc_cam_configure_vdma(dev);
     if(err)
     {
         XRCC_ERR(xrcc_dev_to_dev(dev),
-                 "Configuring Xilinx VDMA channel failed: %d", err);
+                 "xrcc_cam_buffer_queue(): Configuring VDMA failed");
+        vb2_buffer_done(&buf->buf.vb2_buf, VB2_BUF_STATE_ERROR);
         return;
     }
 
-    // Map allocated buffers to DMA addresses
+        // Map allocated buffers to DMA addresses
     dev->xt.dir         = DMA_DEV_TO_MEM;
     dev->xt.sgl[0].size = dev->format.width * dev->bpp;
     dev->xt.sgl[0].icg  = 0;
@@ -391,7 +619,7 @@ static void xrcc_cam_buffer_queue(struct vb2_buffer *vb)
     desc = dma_dev->device_prep_interleaved_dma(dev->dma_chan, &dev->xt, flags);
     if(!desc)
     {
-        XRCC_ERR(xrcc_dev_to_dev(dev), "Failed to preapre DMA transfer");
+        XRCC_ERR(xrcc_dev_to_dev(dev), "Failed to prepare DMA transfer");
         vb2_buffer_done(&buf->buf.vb2_buf, VB2_BUF_STATE_ERROR);
         return;
     }
@@ -411,15 +639,17 @@ static void xrcc_cam_buffer_queue(struct vb2_buffer *vb)
         return;
     }
 
-    /* List elements in incomming vb2_buffer */
-    dump_num_buffers(dev, "xrcc_cam_buffer_queue() end");
-
     if(vb2_is_streaming(&dev->queue))
     {
         XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_buffer_queue()"
                    " still streaming request pending transactions");
         dma_async_issue_pending(dev->dma_chan);
     }
+#endif // !VDMA_CTRL_INTEGRATED
+
+
+    /* List elements in incomming vb2_buffer */
+    dump_num_buffers(dev, "xrcc_cam_buffer_queue() end");
 
     XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_buffer_queue() end");
 }
@@ -429,15 +659,29 @@ static int xrcc_cam_start_streaming(struct vb2_queue *vq, unsigned int count)
     xrcc_cam_dev_t *dev = vb2_get_drv_priv(vq);
 //    xrcc_dma_buffer_t *buf, *nbuf;
 
+    if(!dev)
+    {
+        printk("Don't have any private structure?!");
+        return -1;
+    }
+
     XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_start_streaming()");
+
 
     dev->sequence = 0;
 
+#ifndef VDMA_CTRL_INTEGRATED
     /* Start the DMA engine. This must be done before starting the blocks
      * in the pipeline to avoid DMA synchronization issues.
      */
     dma_async_issue_pending(dev->dma_chan);
+#endif // VDMA_CTRL_INTEGRATED
 
+#ifdef USE_VECTOR_BUFFERS
+    // We have everything we need - we have all buffers reserved
+    // so we should configure VDMA engine and started the stream
+    vdma_ctrl_configure(dev);
+#endif
 #ifdef VIDEO_CTRL_INTEGRATED
     video_ctrl_set_size(dev, dev->width, dev->height, dev->bpp);
     video_ctrl_run(dev);
@@ -453,9 +697,28 @@ static int xrcc_cam_start_streaming(struct vb2_queue *vq, unsigned int count)
 static void xrcc_cam_stop_streaming(struct vb2_queue *vq)
 {
     xrcc_cam_dev_t *dev = vb2_get_drv_priv(vq);
-    xrcc_dma_buffer_t *buf, *nbuf;
+
+#ifdef USE_VECTOR_BUFFERS
+    int i;
+    for(i = 0; i < dev->frm_cnt; i++)
+    {
+        spin_lock_irq(&dev->queued_lock);
+        if((dev->vect_bufs[i].addr != 0) &&
+           (dev->vect_bufs[i].buf != NULL) &&
+           (dev->vect_bufs[i].registered))
+        {
+            vb2_buffer_done(&dev->vect_bufs[i].buf->vb2_buf, VB2_BUF_STATE_ERROR);
+            dev->vect_bufs[i].registered = 0;
+            dev->vect_bufs[i].buf = NULL;
+            dev->vect_bufs[i].addr = 0;
+        }
+        spin_unlock_irq(&dev->queued_lock);
+    }
+    vdma_ctrl_reset(dev);
+#endif
 
     XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_stop_streaming()");
+
 
 #ifdef VIDEO_CTRL_INTEGRATED
     video_ctrl_inten(dev, 0);
@@ -463,12 +726,18 @@ static void xrcc_cam_stop_streaming(struct vb2_queue *vq)
     video_ctrl_stop(dev);
 #endif
 
-    spin_lock_irq(&dev->queued_lock);
-    list_for_each_entry_safe(buf, nbuf, &dev->queued_bufs, queue) {
-        vb2_buffer_done(&buf->buf.vb2_buf, VB2_BUF_STATE_ERROR);
-        list_del(&buf->queue);
+#ifndef USE_VECTOR_BUFFERS
+    {
+        xrcc_dma_buffer_t *buf, *nbuf;
+
+        spin_lock_irq(&dev->queued_lock);
+        list_for_each_entry_safe(buf, nbuf, &dev->queued_bufs, queue) {
+            vb2_buffer_done(&buf->buf.vb2_buf, VB2_BUF_STATE_ERROR);
+            list_del(&buf->queue);
+        }
+        spin_unlock_irq(&dev->queued_lock);
     }
-    spin_unlock_irq(&dev->queued_lock);
+#endif // USE_VECTOR_BUFFERS
 }
 
 static const struct vb2_ops xrcc_cam_queue_qops = {
@@ -714,19 +983,40 @@ static irqreturn_t xrcc_cam_irq_handler(int irq, void *data)
 {
     xrcc_cam_dev_t *dev = data;
     u32 rx_ctrl_reg = video_ctrl_read(dev, VIDEO_CTRL_RX_CTRL);
+    int idx;
+
+    //TODO: bug fixing - sometimes it crashes because unmap() was called
+    if(!dev->video_ctrl_mem || !dev->vdma_ctrl_mem)
+    {
+        XRCC_ERR(xrcc_dev_to_dev(dev),
+                 "xrcc_cam_irq_handler() called before video or VDMA registers mapped");
+        return IRQ_HANDLED;
+    }
 
     XRCC_DEBUG(xrcc_dev_to_dev(dev),
                "xrcc_cam_irq_handler() rx_ctrl_reg=0x%08x",
                rx_ctrl_reg);
 
-    // Clear interrupt
-    video_ctrl_write(dev, VIDEO_CTRL_RX_CTRL, rx_ctrl_reg);
-
-    rx_ctrl_reg = video_ctrl_read(dev, VIDEO_CTRL_RX_CTRL);
+    idx = video_ctrl_get_idx(rx_ctrl_reg, dev->frm_cnt);
 
     XRCC_DEBUG(xrcc_dev_to_dev(dev),
-               "xrcc_cam_irq_handler() cleaned rx_ctrl_reg=0x%08x",
-               rx_ctrl_reg);
+               "New frame index=%d in buffer address=0x%08x available (reg=%d)",
+               idx, dev->vect_bufs[idx].addr, dev->vect_bufs[idx].registered);
+
+    spin_lock(&dev->queued_lock);
+    if(dev->vect_bufs[idx].registered)
+    {
+        dev->vect_bufs[idx].registered = 0;
+        dev->vect_bufs[idx].buf->field = V4L2_FIELD_NONE;
+        dev->vect_bufs[idx].buf->sequence = dev->sequence++;
+        dev->vect_bufs[idx].buf->vb2_buf.timestamp = ktime_get_ns();
+
+        vb2_buffer_done(&dev->vect_bufs[idx].buf->vb2_buf, VB2_BUF_STATE_DONE);
+    }
+    spin_unlock(&dev->queued_lock);
+
+    // Clear interrupt
+    video_ctrl_write(dev, VIDEO_CTRL_RX_CTRL, rx_ctrl_reg);
 
     return IRQ_HANDLED;
 }
@@ -830,6 +1120,10 @@ static int xrcc_cam_cleanup(xrcc_cam_dev_t *dev)
 
 #ifdef VIDEO_CTRL_INTEGRATED
     iounmap(dev->video_ctrl_mem);
+#endif
+
+#ifdef VDMA_CTRL_INTEGRATED
+    iounmap(dev->vdma_ctrl_mem);
 #endif
 
     if(video_is_registered(&dev->video))
@@ -977,6 +1271,16 @@ static int xrcc_cam_probe(struct platform_device *pdev)
     }
 
 #ifdef VIDEO_CTRL_INTEGRATED
+
+    // Map also Video controller
+    {
+        const uint32_t cVideoCtrlAddr   = 0x43C10000;
+
+        xrcc_dev->video_ctrl_mem = ioremap(cVideoCtrlAddr, 100);
+        XRCC_INFO(xrcc_dev_to_dev(xrcc_dev), "Mapped video controller, version: 0x%08x",
+                  video_ctrl_version(xrcc_dev));
+    }
+
     // Request and map alos interrupt
     XRCC_DEBUG(xrcc_dev_to_dev(xrcc_dev), "RCC Camera requesting IRQ");
     xrcc_dev->frame_ptr_irq = platform_get_irq(pdev, 0);
@@ -1001,14 +1305,27 @@ static int xrcc_cam_probe(struct platform_device *pdev)
         {
             XRCC_ERR(xrcc_dev_to_dev(xrcc_dev),
                      "VDMA control ioremap() fails");
+            return err;
         }
-        else
-        {
-            XRCC_INFO(xrcc_dev_to_dev(xrcc_dev), "VDMA control version: 0x%08x",
-                      vdma_ctrl_version(xrcc_dev));
-        }
+
+        XRCC_DEBUG(xrcc_dev_to_dev(xrcc_dev), "VDMA control version: 0x%08x",
+                   vdma_ctrl_version(xrcc_dev));
     }
 #endif
+
+#ifdef USE_VECTOR_BUFFERS
+    xrcc_dev->vect_bufs =
+        (xrcc_cam_buf_t *)devm_kzalloc(&pdev->dev,
+                                       sizeof(xrcc_cam_buf_t)*xrcc_dev->frm_cnt,
+                                       GFP_ATOMIC);
+    if(xrcc_dev->vect_bufs == NULL)
+    {
+        XRCC_ERR(xrcc_dev_to_dev(xrcc_dev),
+                 "Can not locate vector buffers");
+        return -ENOMEM;
+    }
+#endif
+    memset(xrcc_dev->vect_bufs, 0, sizeof(xrcc_cam_buf_t)*xrcc_dev->frm_cnt);
 
     XRCC_INFO(xrcc_dev_to_dev(xrcc_dev), "RCC Camera Driver Probed");
 

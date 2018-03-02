@@ -7,11 +7,14 @@ TARGET_OBJS=$(addprefix $(MY_OBJ_DIR), $(TARGETS:=.o))
 INTF_OBJECTS=$(addprefix $(MY_OBJ_DIR), $(INTF_SOURCES:../interface/%.cpp=intf_%.o))
 OBJECTS+=$(INTF_OBJECTS)
 
-
+# OpenCV directories
+OPENCV_INC_DIR=/usr/local/include
+OPENCV_LIB_DIR=/usr/local/lib
+OPENCV_LIBS=-lopencv_core
 # Compiler/linker parameters
-INC_DIRS=-I$(BASE_DIR)/interface -I$(BASE_DIR)/daemon
+INC_DIRS=-I$(BASE_DIR)/interface -I$(BASE_DIR)/daemon -I$(OPENCV_INC_DIR)
 CPPFLAGS+=-I$(THIS_DIR) $(INC_DIRS) -std=c++11 -Wall -g -Wextra
-LDFLAGS=-lpthread
+LDFLAGS=-lpthread -L$(OPENCV_LIB_DIR) -lopencv_core -lopencv_video -lopencv_videoio
 
 CXX=$(CROSS_COMPILE)g++
 CC=$(CROSS_COMPILE)gcc

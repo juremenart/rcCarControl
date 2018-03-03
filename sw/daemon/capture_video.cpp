@@ -20,7 +20,7 @@ int main(int argc, char *argv[])
 {
     // OV5642
     rccOv5642Ctrl *ov5642Ctrl = new rccOv5642Ctrl(0);
-    rccOv5642Ctrl::ov5642_mode_t mode = rccOv5642Ctrl::ov5642_720p_video;
+    rccOv5642Ctrl::ov5642_mode_t mode = rccOv5642Ctrl::ov5642_vga_yuv;
     rccImgProc *imgProc;
     std::string inputFile("/dev/video0");
     std::string outputFile("/tmp/bla.avi");
@@ -99,5 +99,5 @@ int main(int argc, char *argv[])
 end:
     delete ov5642Ctrl;
     delete imgProc;
-    return 0;
+    return retVal;
 }

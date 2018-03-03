@@ -56,9 +56,10 @@ int main(int argc, char *argv[])
 
     // Prepare output video stream
     {
-        int out_fourcc = CV_FOURCC('F','M','P','4'); // mpeg
-        //int fourcc = CV_FOURCC('X','2','6','4'); // x264
-        int fps = imgProc->getVideoDev()->get(cv::CAP_PROP_FPS);
+        //int out_fourcc = CV_FOURCC('F','M','P','4'); // mpeg
+        int out_fourcc = CV_FOURCC('X','2','6','4'); // x264
+//        int fps = imgProc->getVideoDev()->get(cv::CAP_PROP_FPS);
+        int fps = 15;
         int width = (int)imgProc->getVideoDev()->get(cv::CAP_PROP_FRAME_WIDTH);
         int height = (int)imgProc->getVideoDev()->get(cv::CAP_PROP_FRAME_HEIGHT);
 
@@ -76,8 +77,6 @@ int main(int argc, char *argv[])
     while(true)
     {
         cv::Mat frame;
-        if(frame.empty())
-            break;
         if(!imgProc->readFrame(frame))
         {
             std::cerr << "Problem getting the frame" << std::endl;
@@ -89,13 +88,16 @@ int main(int argc, char *argv[])
             }
         }
 
+        if(frame.empty())
+            break;
+
         outputVideo << frame;
     }
 
     retVal = 0;
 
 end:
-    delete [] ov5642Ctrl;
-    delete [] imgProc;
+    delete ov5642Ctrl;
+    delete imgProc;
     return 0;
 }

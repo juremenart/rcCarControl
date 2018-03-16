@@ -14,7 +14,7 @@ OPENCV_LIBS=-lopencv_core
 # Compiler/linker parameters
 INC_DIRS=-I$(BASE_DIR)/interface -I$(BASE_DIR)/daemon -I$(OPENCV_INC_DIR)
 CPPFLAGS+=-I$(THIS_DIR) $(INC_DIRS) -std=c++11 -Wall -g -Wextra
-LDFLAGS=-lpthread -L$(OPENCV_LIB_DIR) -lopencv_core -lopencv_video -lopencv_videoio
+LDFLAGS=-lpthread -L$(OPENCV_LIB_DIR) -lopencv_core -lopencv_video -lopencv_videoio -lvlc
 
 CXX=$(CROSS_COMPILE)g++
 CC=$(CROSS_COMPILE)gcc

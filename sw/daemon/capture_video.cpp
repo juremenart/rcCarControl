@@ -30,7 +30,9 @@ static char const *vlc_argv[] =
     "--no-audio",
 //    "--no-xlib",
     "--ignore-config",
-    "--sout=#transcode{vcodec=h264,scale=Auto}:duplicate{dst=display,dst=rtp{sdp=rtsp://127.0.0.1:8080/}}",
+    "--input-repeat", "100",
+//    "--sout=#duplicate{dst=display,dst=rtp{sdp=rtsp://127.0.0.1:8080/}}",
+    "--sout=#transcode{vcodec=h264,scale=Auto}:duplicate{dst=rtp{sdp=rtsp://127.0.0.1:8080/}}",
     "--rtsp-tcp"
 };
 static int vlc_argc = sizeof(vlc_argv) / sizeof(*vlc_argv);

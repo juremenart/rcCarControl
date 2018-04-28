@@ -10,11 +10,16 @@ OBJECTS+=$(INTF_OBJECTS)
 # OpenCV directories
 OPENCV_INC_DIR=/usr/local/include
 OPENCV_LIB_DIR=/usr/local/lib
-OPENCV_LIBS=-lopencv_core
+OPENCV_LIBS=-lopencv_core  -lopencv_video -lopencv_videoio
+
+# live555
+LIVE555_INC_DIRS=-I/usr/local/include/liveMedia -I/usr/local/include/BasicUsageEnvironment/ -I/usr/local/include/groupsock -I/usr/local/include/UsageEnvironment
+# Order of the following libraries is important:
+LIVE555_LIBS= -lliveMedia -lgroupsock -lBasicUsageEnvironment -lUsageEnvironment
 # Compiler/linker parameters
-INC_DIRS=-I$(BASE_DIR)/interface -I$(BASE_DIR)/daemon -I$(OPENCV_INC_DIR)
+INC_DIRS=-I$(BASE_DIR)/interface -I$(BASE_DIR)/daemon -I$(OPENCV_INC_DIR) $(LIVE555_INC_DIRS)
 CPPFLAGS+=-I$(THIS_DIR) $(INC_DIRS) -std=c++11 -Wall -g -Wextra
-LDFLAGS=-lpthread -L$(OPENCV_LIB_DIR) -lopencv_core -lopencv_video -lopencv_videoio -lvlc
+LDFLAGS=-lpthread -L$(OPENCV_LIB_DIR) $(OPENCV_LIBS) $(LIVE555_LIBS)
 
 CXX=$(CROSS_COMPILE)g++
 CC=$(CROSS_COMPILE)gcc

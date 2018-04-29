@@ -10,6 +10,17 @@ public:
     static LiveCamDeviceSource *createNew(UsageEnvironment &env);
 
     virtual void doGetNextFrame();
+    virtual unsigned maxFramesize() const
+    {
+        envir() << "maxFrameSize()\n";
+        return 640*480*2;
+    }
+
+    virtual Boolean isFramedSource() const
+    {
+        envir() << "isFramedSource()\n";
+        return true;
+    };
 protected:
     LiveCamDeviceSource(UsageEnvironment &env);
     virtual ~LiveCamDeviceSource();

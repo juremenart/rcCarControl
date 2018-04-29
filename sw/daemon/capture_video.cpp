@@ -23,14 +23,16 @@
 
 #define USE_LIVE555
 
-#include "live_cam_device_source.h"
+#include <liveMedia.hh>
+#include <BasicUsageEnvironment.hh>
+#include <GroupsockHelper.hh>
 
-#include "liveMedia.hh"
-#include "BasicUsageEnvironment.hh"
+#include "live_cam_device_source.h"
+#include "live_media_subsession.h"
 
 #ifdef USE_LIVE555
 typedef struct sessionState_s {
-    FramedSource *source;
+    LiveCamDeviceSource *source;
     RTPSink* sink;
     RTCPInstance* rtcpInstance;
     Groupsock* rtpGroupsock;
@@ -74,11 +76,53 @@ void closeServiceServer(int fd)
 #endif // USE_LIVE555
 }
 
+void afterPlaying(void* /*clientData*/) {
+    liveSession.sink->envir() << "afterPlaying()\n";
+    liveSession.sink->stopPlaying();
+    Medium::close(liveSession.source);
+    // Note that this also closes the input file that this source read from.
+
+    // Start playing once again:
+//    play();
+}
+
 void startServiceServer(int port, int fps)
 {
 #ifdef USE_LIVE555
+    Port rtpPort(18888);
+    Port rtcpPort(18888 + 1);
+    const unsigned char ttl = 255;
+
     liveScheduler = BasicTaskScheduler::createNew();
     liveEnv = BasicUsageEnvironment::createNew(*liveScheduler);
+
+    // Create 'groupsocks' for RTP and RTCP:
+    struct in_addr destinationAddress;
+    destinationAddress.s_addr = chooseRandomIPv4SSMAddress(*liveEnv);
+    // Note: This is a multicast address.  If you wish instead to stream
+    // using unicast, then you should use the "testOnDemandRTSPServer"
+    // test program - not this test program - as a model.
+
+    Groupsock rtpGroupsock(*liveEnv, destinationAddress, rtpPort, ttl);
+    rtpGroupsock.multicastSendOnly();
+    Groupsock rtcpGroupsock(*liveEnv, destinationAddress, rtcpPort, ttl);
+    rtcpGroupsock.multicastSendOnly();
+
+    // Create a 'H264 Video RTP' sink from the RTP 'groupsock':
+    OutPacketBuffer::maxSize = 100000;
+    liveSession.sink = H264VideoRTPSink::createNew(*liveEnv, &rtpGroupsock, 96);
+
+    // Create (and start) a 'RTCP instance' for this RTP sink:
+    const unsigned estimatedSessionBandwidth = 500; // in kbps; for RTCP b/w share
+    const unsigned maxCNAMElen = 100;
+    unsigned char CNAME[maxCNAMElen+1];
+    gethostname((char*)CNAME, maxCNAMElen);
+    CNAME[maxCNAMElen] = '\0'; // just in case
+    RTCPInstance* rtcp =
+        RTCPInstance::createNew(*liveEnv, &rtcpGroupsock,
+                                estimatedSessionBandwidth, CNAME,
+                                liveSession.sink, NULL /* we're a server */,
+                                True /* we're a SSM source */);
 
     // Create the RTSP server:
     liveSession.rtspServer = RTSPServer::createNew(*liveEnv, port);
@@ -105,13 +149,21 @@ void startServiceServer(int port, int fps)
         ServerMediaSession *sms = ServerMediaSession::createNew(*liveEnv,
                                                                 streamName,
                                                                 streamName,
-                                                                descString);
+                                                                descString,
+                                                                True);
+//        LiveMediaSubsession *subs = new LiveMediaSubsession(*liveEnv, true);
+        PassiveServerMediaSubsession *subs =
+            PassiveServerMediaSubsession::createNew(*liveSession.sink, rtcp);
 
         // JPEGMediaSubsession class replacement?
+        sms->addSubsession(subs);
         liveSession.rtspServer->addServerMediaSession(sms);
         *liveEnv << "Session available at URL: " <<
             liveSession.rtspServer->rtspURL(sms) << "\n";
     }
+
+    liveSession.sink->startPlaying(*liveSession.source,
+                                   afterPlaying, liveSession.sink);
 
     liveEnv->taskScheduler().doEventLoop();
 #endif // USE_LIVE555

@@ -14,12 +14,12 @@ LiveCamDeviceSource *LiveCamDeviceSource::createNew(UsageEnvironment &env)
 LiveCamDeviceSource::LiveCamDeviceSource(UsageEnvironment &env)
     : FramedSource(env)
 {
-
+    envir() << "LiveCamDeviceSource::LiveCamDeviceSource()\n";
 }
 
 LiveCamDeviceSource::~LiveCamDeviceSource(void)
 {
-
+    envir() << "LiveCamDeviceSource::~LiveCamDeviceSource()\n";
 }
 
 void LiveCamDeviceSource::doGetNextFrame(void)

@@ -17,6 +17,7 @@ public:
     bool close(void);
 
     bool readFrame(cv::Mat &frame);
+    void reset(void);
 
     // Temporary exposure of this
     cv::VideoCapture *getVideoDev(void) { return &m_videoCap; };

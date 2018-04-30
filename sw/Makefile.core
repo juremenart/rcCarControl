@@ -10,7 +10,7 @@ OBJECTS+=$(INTF_OBJECTS)
 # OpenCV directories
 OPENCV_INC_DIR=/usr/local/include
 OPENCV_LIB_DIR=/usr/local/lib
-OPENCV_LIBS=-lopencv_core  -lopencv_video -lopencv_videoio
+OPENCV_LIBS=-lopencv_core  -lopencv_video -lopencv_videoio -lopencv_imgproc -lopencv_imgcodecs
 
 # live555
 LIVE555_INC_DIRS=-I/usr/local/include/liveMedia -I/usr/local/include/BasicUsageEnvironment/ -I/usr/local/include/groupsock -I/usr/local/include/UsageEnvironment

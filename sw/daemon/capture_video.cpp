@@ -28,10 +28,11 @@
 #include <GroupsockHelper.hh>
 
 #include "live_cam_device_source.h"
-#include "live_media_subsession.h"
+//#include "live_media_subsession.h"
 
 #ifdef USE_LIVE555
 typedef struct sessionState_s {
+    bool started;
     LiveCamDeviceSource *source;
     RTPSink* sink;
     RTCPInstance* rtcpInstance;
@@ -40,8 +41,8 @@ typedef struct sessionState_s {
     RTSPServer* rtspServer;
 
     sessionState_s()
-        : source(NULL), sink(NULL), rtcpInstance(NULL), rtpGroupsock(NULL),
-          rtcpGroupsock(NULL), rtspServer(NULL) { };
+        : started(false), source(NULL), sink(NULL), rtcpInstance(NULL),
+          rtpGroupsock(NULL), rtcpGroupsock(NULL), rtspServer(NULL) { };
 } sessionState_t;
 
 UsageEnvironment *liveEnv        = NULL;
@@ -109,8 +110,9 @@ void startServiceServer(int port, int fps)
     rtcpGroupsock.multicastSendOnly();
 
     // Create a 'H264 Video RTP' sink from the RTP 'groupsock':
-    OutPacketBuffer::maxSize = 100000;
-    liveSession.sink = H264VideoRTPSink::createNew(*liveEnv, &rtpGroupsock, 96);
+//    OutPacketBuffer::maxSize = 100000;
+//    liveSession.sink = H264VideoRTPSink::createNew(*liveEnv, &rtpGroupsock, 96);
+    liveSession.sink = JPEGVideoRTPSink::createNew(*liveEnv, &rtpGroupsock);
 
     // Create (and start) a 'RTCP instance' for this RTP sink:
     const unsigned estimatedSessionBandwidth = 500; // in kbps; for RTCP b/w share
@@ -165,7 +167,10 @@ void startServiceServer(int port, int fps)
     liveSession.sink->startPlaying(*liveSession.source,
                                    afterPlaying, liveSession.sink);
 
+    liveSession.started = true;
+
     liveEnv->taskScheduler().doEventLoop();
+
 #endif // USE_LIVE555
     return;
 }
@@ -298,11 +303,19 @@ int main(int argc, char *argv[])
         }
 
         if(frame.empty())
-            break;
-
+        {
+//            break;
+            std::cerr << "Reseting input frame" << std::endl;
+            imgProc->reset();
+            continue;
+        }
         if(startServer)
         {
-            usleep(500000);
+#ifdef USE_LIVE555
+            if(liveSession.started)
+                liveSession.source->encodeAndStream(frame);
+#endif // USE_LIVE555
+            usleep(100000);
         }
         else
         {

@@ -10,22 +10,23 @@ public:
     static LiveCamDeviceSource *createNew(UsageEnvironment &env);
 
     virtual void doGetNextFrame();
-    virtual unsigned maxFramesize() const
-    {
-        envir() << "maxFrameSize()\n";
-        return 640*480*2;
-    }
 
-    virtual Boolean isFramedSource() const
-    {
-        envir() << "isFramedSource()\n";
-        return true;
-    };
+    void signalNewFrame(void);
+    bool encodeAndStream(cv::Mat &frame);
+
+private:
+    static void deliverFrame0(void* clientData);
+    void deliverFrame();
+
 protected:
     LiveCamDeviceSource(UsageEnvironment &env);
     virtual ~LiveCamDeviceSource();
 
+    static EventTriggerId eventTriggerId;
     static LiveCamDeviceSource *camDevice;
+
+    std::vector<int> mEncodingVar;
+    std::vector<uchar> mEncodedBuffer;
 };
 
 #endif // LIVE_CAM_DEVICE_SOURCE_HH

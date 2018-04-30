@@ -57,3 +57,15 @@ bool rccImgProc::readFrame(cv::Mat &frame)
 
     return true;
 }
+
+void rccImgProc::reset(void)
+{
+    if(!isOpened())
+    {
+        return;
+    }
+
+    m_videoCap.set(CV_CAP_PROP_POS_FRAMES, 0);
+
+    return;
+}

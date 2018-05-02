@@ -1,7 +1,7 @@
 #include <iostream>
 
 #include <GroupsockHelper.hh>
-#include <opencv2/opencv.hpp>
+
 #include <opencv2/videoio.hpp>  // Video write
 
 #include "live_cam_device_source.h"
@@ -18,11 +18,12 @@ LiveCamDeviceSource *LiveCamDeviceSource::createNew(UsageEnvironment &env)
 }
 
 LiveCamDeviceSource::LiveCamDeviceSource(UsageEnvironment &env)
-    : FramedSource(env)
+//    : FramedSource(env)
+    : JPEGVideoSource(env)
 {
     mEncodingVar.resize(0);
     mEncodingVar.push_back(CV_IMWRITE_JPEG_QUALITY);
-    mEncodingVar.push_back(70);
+    mEncodingVar.push_back(cQFactor);
     mEncodedBuffer.resize(0);
 
     if(eventTriggerId == 0)
@@ -43,7 +44,7 @@ LiveCamDeviceSource::~LiveCamDeviceSource(void)
 
 void LiveCamDeviceSource::doGetNextFrame(void)
 {
-    envir() << "doGetNextFrame()\n";
+//    envir() << "doGetNextFrame()\n";
 }
 
 void LiveCamDeviceSource::deliverFrame0(void *clientData)
@@ -58,6 +59,8 @@ void LiveCamDeviceSource::deliverFrame0(void *clientData)
 
     devSource->deliverFrame();
 }
+
+static std::chrono::steady_clock::time_point lastTp;
 
 void LiveCamDeviceSource::deliverFrame(void)
 {
@@ -86,11 +89,21 @@ void LiveCamDeviceSource::deliverFrame(void)
     if(!isCurrentlyAwaitingData())
         return;
 
-    envir() << "deliverFrame()\n";
+//    std::chrono::steady_clock::time_point tp = std::chrono::steady_clock::now();
+//
+//    std::cerr << "deliverFrame() delay= " <<
+//        std::chrono::duration_cast<std::chrono::microseconds>(tp-lastTp).count()
+//              << " [us]" << std::endl;
+//
+//    lastTp = tp;
 
     gettimeofday(&fPresentationTime, NULL);
-//    memcpy(fTo, mEncodedBuffer.data(), mEncodedBuffer.size());
-    fFrameSize = mEncodedBuffer.size();
+
+    {
+        std::lock_guard<std::mutex> guard(mBufferProt);
+        memcpy(fTo, mEncodedBuffer.data(), mEncodedBuffer.size());
+        fFrameSize = mEncodedBuffer.size();
+    }
 
     FramedSource::afterGetting(this);
 }
@@ -100,22 +113,14 @@ void LiveCamDeviceSource::signalNewFrame(void)
     envir().taskScheduler().triggerEvent(eventTriggerId, camDevice);
 }
 
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
-
 bool LiveCamDeviceSource::encodeAndStream(cv::Mat &frame)
 {
-    /* of course protect buffers ;-) */
-    cv::imencode(".jpg", frame, mEncodedBuffer, mEncodingVar);
+    {
+        std::lock_guard<std::mutex> guard(mBufferProt);
+        /* of course protect buffers ;-) */
+        cv::imencode(".jpg", frame, mEncodedBuffer, mEncodingVar);
+    }
 
-    std::cerr << "encodeAndStream jpeg size = " << mEncodedBuffer.size() << std::endl;
-    int fo;
-    fo=::open("test.jpg", O_WRONLY | O_CREAT);
-    write(fo, mEncodedBuffer.data(), mEncodedBuffer.size());
-    ::close(fo);
-
-//    signalNewFrame();
+    signalNewFrame();
     return true;
 }

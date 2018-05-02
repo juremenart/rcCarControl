@@ -14,6 +14,7 @@
 
 #include <iostream>
 #include <mutex>
+#include <chrono>
 
 #include <opencv2/opencv.hpp>
 #include <opencv2/videoio.hpp>  // Video write
@@ -28,7 +29,6 @@
 #include <GroupsockHelper.hh>
 
 #include "live_cam_device_source.h"
-//#include "live_media_subsession.h"
 
 #ifdef USE_LIVE555
 typedef struct sessionState_s {
@@ -153,7 +153,6 @@ void startServiceServer(int port, int fps)
                                                                 streamName,
                                                                 descString,
                                                                 True);
-//        LiveMediaSubsession *subs = new LiveMediaSubsession(*liveEnv, true);
         PassiveServerMediaSubsession *subs =
             PassiveServerMediaSubsession::createNew(*liveSession.sink, rtcp);
 
@@ -200,6 +199,9 @@ int main(int argc, char *argv[])
 
     std::thread *serverThread;
 
+    std::chrono::steady_clock::time_point tp;
+    std::chrono::duration <int, std::micro> interval(1000000/15);
+
 #ifdef USE_OV5642
     ov5642Ctrl = new rccOv5642Ctrl(0);
     if(!ov5642Ctrl->init(mode))
@@ -235,7 +237,8 @@ int main(int argc, char *argv[])
     }
 
     /* Initalize frame structure */
-    fps = (int)imgProc->getVideoDev()->get(cv::CAP_PROP_FPS);
+    fps = 7;//(int)imgProc->getVideoDev()->get(cv::CAP_PROP_FPS);
+    interval = std::chrono::duration<int, std::micro>(1000000 / fps);
     width = (int)imgProc->getVideoDev()->get(cv::CAP_PROP_FRAME_WIDTH);
     height = (int)imgProc->getVideoDev()->get(cv::CAP_PROP_FRAME_HEIGHT);
     fourcc = (int)imgProc->getVideoDev()->get(cv::CAP_PROP_FOURCC);
@@ -264,6 +267,7 @@ int main(int argc, char *argv[])
         if(startServer)
         {
             serverThread = new std::thread(startServiceServer, serverPort, fps);
+
 //            serverFd = startServiceServer(serverPort, inputFile, fps);
 //            if(serverFd < 0)
 //            {
@@ -289,6 +293,7 @@ int main(int argc, char *argv[])
         }
     }
 
+    tp = std::chrono::steady_clock::now();
     while(true)
     {
         if(!imgProc->readFrame(frame))
@@ -305,7 +310,7 @@ int main(int argc, char *argv[])
         if(frame.empty())
         {
 //            break;
-            std::cerr << "Reseting input frame" << std::endl;
+//            std::cerr << "Reseting input frame" << std::endl;
             imgProc->reset();
             continue;
         }
@@ -315,12 +320,14 @@ int main(int argc, char *argv[])
             if(liveSession.started)
                 liveSession.source->encodeAndStream(frame);
 #endif // USE_LIVE555
-            usleep(100000);
         }
         else
         {
             outputVideo << frame;
         }
+
+        tp = tp + interval;
+        std::this_thread::sleep_until(tp);
     }
 
     retVal = 0;

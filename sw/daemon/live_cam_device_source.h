@@ -12,9 +12,11 @@
 class LiveCamDeviceSource : public FramedSource
 {
 public:
-    static LiveCamDeviceSource *createNew(UsageEnvironment &env);
+//    static LiveCamDeviceSource *createNew(UsageEnvironment &env);
+    LiveCamDeviceSource(UsageEnvironment &env);
+    virtual ~LiveCamDeviceSource();
 
-    bool encodeAndStream(cv::Mat &frame);
+    bool encodeAndStream(LiveCamDeviceSource *camDevice, cv::Mat &frame);
 
 private:
 
@@ -23,7 +25,7 @@ private:
     static void deliverFrame0(void* clientData);
     void deliverFrame();
 
-    void signalNewFrame(void);
+    void signalNewFrame(LiveCamDeviceSource *camDevice);
 
     // needed if using JPEG compression
     const u_int8_t cQFactor = 70;
@@ -40,11 +42,8 @@ private:
     u_int8_t mJPEGHeader[JPEG_HEADER_SIZE];
 
 protected:
-    LiveCamDeviceSource(UsageEnvironment &env);
-    virtual ~LiveCamDeviceSource();
 
-    static EventTriggerId eventTriggerId;
-    static LiveCamDeviceSource *camDevice;
+    EventTriggerId eventTriggerId;
 
     std::vector<int> mEncodingVar;
     std::vector<uchar> mEncodedBuffer;

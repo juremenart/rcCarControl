@@ -8,21 +8,20 @@
 
 
 
-EventTriggerId LiveCamDeviceSource::eventTriggerId = 0;
-LiveCamDeviceSource* LiveCamDeviceSource::camDevice = NULL;
+//unsigned LiveCamDeviceSource::refCount = 0;
 
-LiveCamDeviceSource *LiveCamDeviceSource::createNew(UsageEnvironment &env)
-{
-    camDevice = new LiveCamDeviceSource(env);
-    return camDevice;
-}
+//LiveCamDeviceSource *LiveCamDeviceSource::createNew(UsageEnvironment &env)
+//{
+//    return new LiveCamDeviceSource(env);
+//}
 
 LiveCamDeviceSource::LiveCamDeviceSource(UsageEnvironment &env)
-    : FramedSource(env)
+    : FramedSource(env), eventTriggerId(0)
 {
     mEncodingVar.resize(0);
     mEncodingVar.push_back(CV_IMWRITE_JPEG_QUALITY);
     mEncodingVar.push_back(cQFactor);
+
     mEncodedBuffer.resize(0);
 
     mJpegFrameParser = new JpegFrameParser();
@@ -31,8 +30,8 @@ LiveCamDeviceSource::LiveCamDeviceSource(UsageEnvironment &env)
     {
         eventTriggerId =
             envir().taskScheduler().createEventTrigger(deliverFrame0);
+//        std::cout << "Got new trigger ID: " << std::hex << eventTriggerId << std::endl;
     }
-    envir() << "LiveCamDeviceSource::LiveCamDeviceSource()\n";
 }
 
 LiveCamDeviceSource::~LiveCamDeviceSource(void)
@@ -41,8 +40,6 @@ LiveCamDeviceSource::~LiveCamDeviceSource(void)
     eventTriggerId = 0;
 
     delete mJpegFrameParser;
-
-    envir() << "LiveCamDeviceSource::~LiveCamDeviceSource()\n";
 }
 
 void LiveCamDeviceSource::doGetNextFrame(void)
@@ -60,6 +57,7 @@ void LiveCamDeviceSource::deliverFrame0(void *clientData)
         return;
     }
 
+//    std::cout << "Delivering frame for device 0x" << std::hex << (uint64_t)devSource << std::endl;
     devSource->deliverFrame();
 }
 
@@ -90,8 +88,10 @@ void LiveCamDeviceSource::deliverFrame(void)
     // Note the code below.
 
     if(!isCurrentlyAwaitingData())
+    {
+//        std::cout << "!isCurrentlAwaitingData()" << std::endl;
         return;
-
+    }
 //    std::chrono::steady_clock::time_point tp = std::chrono::steady_clock::now();
 //
 //    std::cerr << "deliverFrame() delay= " <<
@@ -109,6 +109,8 @@ void LiveCamDeviceSource::deliverFrame(void)
 
         // TODO: Estimate if we want to lock here or for parsing or rather copy
         // the buffer to estimated one
+
+//        std::cout << "Reading buffer from 0x" << std::hex << (uint64_t)mEncodedBuffer.data() << std::endl;
         if(mJpegFrameParser->parse(mEncodedBuffer.data(), mEncodedBuffer.size()) < 0)
         {
             std::cerr << "JPEG Frame parser failed!" << std::endl;
@@ -136,20 +138,25 @@ void LiveCamDeviceSource::deliverFrame(void)
     FramedSource::afterGetting(this);
 }
 
-void LiveCamDeviceSource::signalNewFrame(void)
+void LiveCamDeviceSource::signalNewFrame(LiveCamDeviceSource *camDevice)
 {
+//    std::cout << "Signaling new from for device 0x" << std::hex <<
+//        (uint64_t)camDevice << " with event ID: " << eventTriggerId << std::endl;
     envir().taskScheduler().triggerEvent(eventTriggerId, camDevice);
 }
 
-bool LiveCamDeviceSource::encodeAndStream(cv::Mat &frame)
+bool LiveCamDeviceSource::encodeAndStream(LiveCamDeviceSource *camDevice,
+                                          cv::Mat &frame)
 {
     {
         std::lock_guard<std::mutex> guard(mBufferProt);
         /* of course protect buffers ;-) */
         cv::imencode(".jpg", frame, mEncodedBuffer, mEncodingVar);
+//        std::cout << "Encoding for device 0x" << std::hex << (uint64_t)camDevice
+//                  << " in buffer 0x" << (uint64_t)mEncodedBuffer.data() << std::endl;
     }
 
-    signalNewFrame();
+    signalNewFrame(camDevice);
     return true;
 }
 

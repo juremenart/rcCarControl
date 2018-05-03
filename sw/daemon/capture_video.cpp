@@ -93,7 +93,7 @@ void startServiceServer(int port, int fps)
     Port rtpPort(18888);
     Port rtcpPort(18888 + 1);
     const unsigned char ttl = 255;
-
+    unsigned timePerFrame = 1000000 / fps;
     liveScheduler = BasicTaskScheduler::createNew();
     liveEnv = BasicUsageEnvironment::createNew(*liveScheduler);
 
@@ -155,8 +155,6 @@ void startServiceServer(int port, int fps)
                                                                 True);
         PassiveServerMediaSubsession *subs =
             PassiveServerMediaSubsession::createNew(*liveSession.sink, rtcp);
-
-        // JPEGMediaSubsession class replacement?
         sms->addSubsession(subs);
         liveSession.rtspServer->addServerMediaSession(sms);
         *liveEnv << "Session available at URL: " <<
@@ -237,7 +235,7 @@ int main(int argc, char *argv[])
     }
 
     /* Initalize frame structure */
-    fps = 7;//(int)imgProc->getVideoDev()->get(cv::CAP_PROP_FPS);
+    fps = (int)imgProc->getVideoDev()->get(cv::CAP_PROP_FPS);
     interval = std::chrono::duration<int, std::micro>(1000000 / fps);
     width = (int)imgProc->getVideoDev()->get(cv::CAP_PROP_FRAME_WIDTH);
     height = (int)imgProc->getVideoDev()->get(cv::CAP_PROP_FRAME_HEIGHT);

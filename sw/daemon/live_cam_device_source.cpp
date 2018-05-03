@@ -18,13 +18,14 @@ LiveCamDeviceSource *LiveCamDeviceSource::createNew(UsageEnvironment &env)
 }
 
 LiveCamDeviceSource::LiveCamDeviceSource(UsageEnvironment &env)
-//    : FramedSource(env)
-    : JPEGVideoSource(env)
+    : FramedSource(env)
 {
     mEncodingVar.resize(0);
     mEncodingVar.push_back(CV_IMWRITE_JPEG_QUALITY);
     mEncodingVar.push_back(cQFactor);
     mEncodedBuffer.resize(0);
+
+    mJpegFrameParser = new JpegFrameParser();
 
     if(eventTriggerId == 0)
     {
@@ -38,6 +39,8 @@ LiveCamDeviceSource::~LiveCamDeviceSource(void)
 {
     envir().taskScheduler().deleteEventTrigger(eventTriggerId);
     eventTriggerId = 0;
+
+    delete mJpegFrameParser;
 
     envir() << "LiveCamDeviceSource::~LiveCamDeviceSource()\n";
 }
@@ -97,13 +100,38 @@ void LiveCamDeviceSource::deliverFrame(void)
 //
 //    lastTp = tp;
 
-    gettimeofday(&fPresentationTime, NULL);
+
+    unsigned int jpeg_length;
+    unsigned char const *scan_data;
 
     {
         std::lock_guard<std::mutex> guard(mBufferProt);
-        memcpy(fTo, mEncodedBuffer.data(), mEncodedBuffer.size());
-        fFrameSize = mEncodedBuffer.size();
+
+        // TODO: Estimate if we want to lock here or for parsing or rather copy
+        // the buffer to estimated one
+        if(mJpegFrameParser->parse(mEncodedBuffer.data(), mEncodedBuffer.size()) < 0)
+        {
+            std::cerr << "JPEG Frame parser failed!" << std::endl;
+        }
+        scan_data = mJpegFrameParser->scandata(jpeg_length);
+
+        fFrameSize = jpeg_length;
+
+        // Deliver the data here:
+        if (jpeg_length > fMaxSize) {
+            fFrameSize = fMaxSize;
+            fNumTruncatedBytes = jpeg_length - fMaxSize;
+        }
+
+        memmove(fTo, scan_data, fFrameSize);
     }
+
+    mLastQFactor = mJpegFrameParser->qFactor();
+    mLastWidth   = mJpegFrameParser->width();
+    mLastHeight  = mJpegFrameParser->height();
+    mType        = mJpegFrameParser->type();
+
+    gettimeofday(&fPresentationTime, NULL);
 
     FramedSource::afterGetting(this);
 }
@@ -124,3 +152,11 @@ bool LiveCamDeviceSource::encodeAndStream(cv::Mat &frame)
     signalNewFrame();
     return true;
 }
+
+u_int8_t const* LiveCamDeviceSource::quantizationTable(u_int8_t& precision,
+                                                       u_int16_t& length)
+{
+    precision = mJpegFrameParser->precision();
+    return mJpegFrameParser->quantizationTables(length);
+}
+

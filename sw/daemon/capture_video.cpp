@@ -24,6 +24,7 @@
 
 #include "rcc_video_streamer.h"
 
+#define TRACK_TIME
 //#define USE_OV5642
 bool strIsNumber(const std::string& s)
 {
@@ -96,7 +97,8 @@ int main(int argc, char *argv[])
     }
 
     /* Initalize frame structure */
-    fps = (int)imgProc->getVideoDev()->get(cv::CAP_PROP_FPS);
+    fps = 5;//(int)imgProc->getVideoDev()->get(cv::CAP_PROP_FPS);
+    imgProc->getVideoDev()->set(cv::CAP_PROP_FPS, fps);
     interval = std::chrono::duration<int, std::micro>(1000000 / fps);
     width = (int)imgProc->getVideoDev()->get(cv::CAP_PROP_FRAME_WIDTH);
     height = (int)imgProc->getVideoDev()->get(cv::CAP_PROP_FRAME_HEIGHT);
@@ -116,7 +118,7 @@ int main(int argc, char *argv[])
         {
             std::cout << "retrieve() NOT suceeded" << std::endl;
         }
-        std::cout << "Video resolution=" << width << "x" << height
+        std::cout << std::dec << "Video resolution=" << width << "x" << height
                   << " fps=" << fps << " fourcc=" << fourcc_str
                   << std::endl;
     }
@@ -143,12 +145,14 @@ int main(int argc, char *argv[])
                 goto end;
             }
 
+#if 0
             greyStreamId = videoStreamer->addStream(greyName, fps);
             if(greyStreamId < 0)
             {
                 std::cerr << "Could not add stream " << greyName << std::endl;
                 goto end;
             }
+#endif
 
             std::cout << "Added streams for original (" << origStreamId <<
                 ") and grey (" << greyStreamId << ")" << std::endl;
@@ -173,6 +177,10 @@ int main(int argc, char *argv[])
     tp = std::chrono::steady_clock::now();
     while(true)
     {
+#ifdef TRACK_TIME
+        std::chrono::steady_clock::time_point tp1 = std::chrono::steady_clock::now();
+#endif
+
         if(!imgProc->readFrame(frame))
         {
             std::cerr << "Problem getting the frame" << std::endl;
@@ -184,6 +192,11 @@ int main(int argc, char *argv[])
             }
         }
 
+#ifdef TRACK_TIME
+        std::chrono::steady_clock::time_point tp2 = std::chrono::steady_clock::now();
+#endif
+
+
         if(frame.empty())
         {
 //            break;
@@ -194,26 +207,44 @@ int main(int argc, char *argv[])
         if(startServer)
         {
             // Stream also greyscale just to show multiple streams
-            cv::Mat grey;
-            cv::Mat grey2;
+//            cv::Mat grey;
+//            cv::Mat grey2;
 
             // TODO: need double-conversion because encodeAndStream
             // can currently work only with 3-dimensional matrices
-            cv::cvtColor(frame, grey, CV_BGR2GRAY);
-            cv::cvtColor(grey, grey2, CV_GRAY2BGR);
+//            cv::cvtColor(frame, grey, CV_BGR2GRAY);
+//            cv::cvtColor(grey, grey2, CV_GRAY2BGR);
 
-            videoStreamer->encodeAndStream(greyStreamId, grey2);
+//            videoStreamer->encodeAndStream(greyStreamId, grey2);
 
             videoStreamer->encodeAndStream(origStreamId, frame);
-
         }
         else
         {
             outputVideo << frame;
         }
+#ifdef TRACK_TIME
+        std::chrono::steady_clock::time_point tp3 = std::chrono::steady_clock::now();
+#endif
 
         tp = tp + interval;
         std::this_thread::sleep_until(tp);
+
+#ifdef TRACK_TIME
+        std::chrono::steady_clock::time_point tp4 = std::chrono::steady_clock::now();
+        std::cout << " Loop: " << std::dec <<
+            std::chrono::duration_cast<std::chrono::microseconds>(tp4-tp1).count()
+                  << " FrameAct: " <<
+            std::chrono::duration_cast<std::chrono::microseconds>(tp2-tp1).count()
+                  << " FrameWrite: " <<
+            std::chrono::duration_cast<std::chrono::microseconds>(tp3-tp2).count()
+                  << " SleepTime: " <<
+            std::chrono::duration_cast<std::chrono::microseconds>(tp4-tp3).count()
+                  << " Interval: " <<
+            std::chrono::duration_cast<std::chrono::microseconds>(interval).count()
+                  << std::endl;
+#endif
+
     }
 
     retVal = 0;

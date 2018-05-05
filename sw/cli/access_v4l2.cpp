@@ -8,7 +8,10 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-const uint8_t cNumBuffers = 1;
+#include <chrono>
+#include <iostream>
+
+const uint8_t cNumBuffers = 3;
 
 uint8_t *buffer[cNumBuffers];
 
@@ -97,9 +100,8 @@ int print_caps(int fd)
 
 int init_mmap(int fd)
 {
-    struct v4l2_requestbuffers req;
+    struct v4l2_requestbuffers req = v4l2_requestbuffers();
 
-    memset(&req, 0, sizeof(struct v4l2_requestbuffers));
     req.count = cNumBuffers;
     req.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     req.memory = V4L2_MEMORY_MMAP;
@@ -109,61 +111,74 @@ int init_mmap(int fd)
         perror("Requesting Buffer");
         return 1;
     }
-
-    struct v4l2_buffer buf[cNumBuffers];
-
-
+    if(cNumBuffers != req.count)
+    {
+        fprintf(stderr, "Buffer count mismatch %d != %d\n",
+                cNumBuffers, req.count);
+        return 1;
+    }
     for(int i = 0; i < cNumBuffers; i++)
     {
-        memset(&buf[i], 0, sizeof(struct v4l2_buffer));
-
-        buf[i].type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-        buf[i].memory = V4L2_MEMORY_MMAP;
-        buf[i].index = i;
-        if(-1 == xioctl(fd, VIDIOC_QUERYBUF, &buf[i]))
+        struct v4l2_buffer buf = v4l2_buffer();
+        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.memory = V4L2_MEMORY_MMAP;
+        buf.index = i;
+        if(-1 == xioctl(fd, VIDIOC_QUERYBUF, &buf))
         {
             perror("Querying Buffer");
             return 1;
         }
 
-        printf("Buffer length: %d, image length: %d\n", buf[i].length, buf[i].bytesused);
-        buffer[i] = (uint8_t *)mmap (NULL, buf[i].length,
+        printf("Buffer length: %d, image length: %d\n", buf.length, buf.bytesused);
+        buffer[i] = (uint8_t *)mmap (NULL, buf.length,
                                      PROT_READ | PROT_WRITE, MAP_SHARED,
-                                     fd, buf[i].m.offset);
+                                     fd, buf.m.offset);
         printf("Buffer %d addess: %p\n", i, buffer[i]);
     }
+
+
+    for(int i = 0; i < cNumBuffers; i++)
+    {
+        struct v4l2_buffer buf = v4l2_buffer();
+
+//    memset(&buf, 0, sizeof(struct v4l2_buffer));
+        buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+        buf.memory = V4L2_MEMORY_MMAP;
+        buf.index = i;
+        if(-1 == xioctl(fd, VIDIOC_QBUF, &buf))
+        {
+            perror("Query Buffer");
+            return 1;
+        }
+    }
+
+    // Start streaming
+    v4l2_buf_type buf_type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    if(-1 == xioctl(fd, VIDIOC_STREAMON, &buf_type))
+    {
+        perror("Start Capture");
+        return 1;
+    }
+
 
     return 0;
 }
 
 int capture_image(int fd, int index)
 {
-    struct v4l2_buffer buf;
-
-    memset(&buf, 0, sizeof(struct v4l2_buffer));
-
-    buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
-    buf.memory = V4L2_MEMORY_MMAP;
-    buf.index = 0;
-    if(-1 == xioctl(fd, VIDIOC_QBUF, &buf))
-    {
-        perror("Query Buffer");
-        return 1;
-    }
-
-    if(-1 == xioctl(fd, VIDIOC_STREAMON, &buf.type))
-    {
-        perror("Start Capture");
-        return 1;
-    }
-
     fd_set fds;
     FD_ZERO(&fds);
     FD_SET(fd, &fds);
     struct timeval tv;
 
+    v4l2_buffer buf = v4l2_buffer();
+
+    buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
+    buf.memory = V4L2_MEMORY_MMAP;
+
     memset(&tv, 0, sizeof(struct timeval));
 
+    std::chrono::steady_clock::time_point tp1 = std::chrono::steady_clock::now();
     tv.tv_sec = 2;
     int r = select(fd+1, &fds, NULL, NULL, &tv);
     if(-1 == r)
@@ -172,11 +187,30 @@ int capture_image(int fd, int index)
         return 1;
     }
 
+    std::chrono::steady_clock::time_point tp2 = std::chrono::steady_clock::now();
     if(-1 == xioctl(fd, VIDIOC_DQBUF, &buf))
     {
         perror("Retrieving Frame");
         return 1;
     }
+
+    std::chrono::steady_clock::time_point tp3 = std::chrono::steady_clock::now();
+    // Here copy received buffer
+
+    if(-1 == xioctl(fd, VIDIOC_QBUF, &buf))
+    {
+        perror("VIDIOC_QBUF");
+        return 1;
+    }
+
+    std::chrono::steady_clock::time_point tp4 = std::chrono::steady_clock::now();
+    std::cout << " SelectTime=" << std::dec <<
+        std::chrono::duration_cast<std::chrono::microseconds>(tp2-tp1).count()
+              << " AcquireTime=" <<
+        std::chrono::duration_cast<std::chrono::microseconds>(tp3-tp2).count()
+              << " FullTime=" <<
+        std::chrono::duration_cast<std::chrono::microseconds>(tp4-tp1).count()
+              << std::endl;
 
 //    IplImage* frame;
 //    CvMat cvmat = cvMat(480, 640, CV_8UC3, (void*)buffer);
@@ -217,7 +251,7 @@ int main(int argc, char *argv[])
             return -1;
         }
 
-        fd = open(argv[1], O_RDWR);
+        fd = open(argv[1], O_RDWR | O_NONBLOCK);
         if (fd == -1)
         {
                 perror("Opening video device");

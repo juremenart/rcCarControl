@@ -97,27 +97,24 @@ int main(int argc, char *argv[])
     }
 
     /* Initalize frame structure */
-    fps = 5;//(int)imgProc->getVideoDev()->get(cv::CAP_PROP_FPS);
+    fps = (int)imgProc->getFps();
+    interval = std::chrono::duration<int, std::micro>(1000000 / fps);
+    width = (int)imgProc->getWidth();
+    height = (int)imgProc->getHeight();
+    fourcc = (int)imgProc->getFourcc();
+#if 0
+    fps = (int)imgProc->getVideoDev()->get(cv::CAP_PROP_FPS);
     imgProc->getVideoDev()->set(cv::CAP_PROP_FPS, fps);
     interval = std::chrono::duration<int, std::micro>(1000000 / fps);
     width = (int)imgProc->getVideoDev()->get(cv::CAP_PROP_FRAME_WIDTH);
     height = (int)imgProc->getVideoDev()->get(cv::CAP_PROP_FRAME_HEIGHT);
     fourcc = (int)imgProc->getVideoDev()->get(cv::CAP_PROP_FOURCC);
+#endif
 
     /* Enable three buffers */
     {
         std::string fourcc_str = cv::format("%c%c%c%c", fourcc & 255, (fourcc >> 8) & 255, (fourcc >> 16) & 255, (fourcc >> 24) & 255);
-        cv::Mat fMat;
-        bool retVal = imgProc->getVideoDev()->retrieve(fMat);
 
-        if(retVal == true)
-        {
-            std::cout << "retrieve() suceeded" << std::endl;
-        }
-        else
-        {
-            std::cout << "retrieve() NOT suceeded" << std::endl;
-        }
         std::cout << std::dec << "Video resolution=" << width << "x" << height
                   << " fps=" << fps << " fourcc=" << fourcc_str
                   << std::endl;

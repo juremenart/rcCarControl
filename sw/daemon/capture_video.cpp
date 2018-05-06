@@ -24,7 +24,7 @@
 
 #include "rcc_video_streamer.h"
 
-//#define TRACK_TIME
+#define TRACK_TIME
 #define USE_OV5642
 bool strIsNumber(const std::string& s)
 {
@@ -102,14 +102,7 @@ int main(int argc, char *argv[])
     width = (int)imgProc->getWidth();
     height = (int)imgProc->getHeight();
     fourcc = (int)imgProc->getFourcc();
-#if 0
-    fps = (int)imgProc->getVideoDev()->get(cv::CAP_PROP_FPS);
-    imgProc->getVideoDev()->set(cv::CAP_PROP_FPS, fps);
-    interval = std::chrono::duration<int, std::micro>(1000000 / fps);
-    width = (int)imgProc->getVideoDev()->get(cv::CAP_PROP_FRAME_WIDTH);
-    height = (int)imgProc->getVideoDev()->get(cv::CAP_PROP_FRAME_HEIGHT);
-    fourcc = (int)imgProc->getVideoDev()->get(cv::CAP_PROP_FOURCC);
-#endif
+
 
     /* Enable three buffers */
     {
@@ -224,15 +217,11 @@ int main(int argc, char *argv[])
 #endif
 
         tp = tp + interval;
-        if(tp < std::chrono::steady_clock::now())
-        {
-            std::this_thread::sleep_until(tp);
-        }
-        else
+        if(tp > std::chrono::steady_clock::now())
         {
             std::cerr << "Warning: Loop too slow" << std::endl;
         }
-
+        std::this_thread::sleep_until(tp);
 #ifdef TRACK_TIME
         std::chrono::steady_clock::time_point tp4 = std::chrono::steady_clock::now();
         std::cout << " Loop: " << std::dec <<

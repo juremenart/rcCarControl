@@ -2,6 +2,7 @@
 #define __RCC_IMG_PROC_H
 
 #include <string>
+#include <ctime>
 
 #include "opencv2/opencv.hpp"
 
@@ -32,7 +33,7 @@ private:
     bool openV4L2Device(std::string a_devName);
     bool initV4L2Device(void);
     void closeV4L2Device(void);
-    bool readV4L2Frame(cv::Mat &a_frame);
+    bool readV4L2Frame(cv::Mat &a_frame, struct timeval &a_timestamp);
 #endif
 
 private:

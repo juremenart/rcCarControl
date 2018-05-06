@@ -86,7 +86,8 @@ bool rccImgProc::readFrame(cv::Mat &frame)
 #ifdef V4L2_DIRECT_CTRL
     if(m_v4l2Open)
     {
-        return readV4L2Frame(frame);
+        struct timeval timestamp;
+        return readV4L2Frame(frame, timestamp);
     }
 #endif
 
@@ -214,8 +215,6 @@ bool rccImgProc::initV4L2Device(void)
     }
 
     int numBuffers = req.count;
-    std::cout << "initV4L2Device() number of buffers = "
-              << numBuffers << std::endl;
 
     for(int i = 0; i < numBuffers; i++)
     {
@@ -276,7 +275,8 @@ void rccImgProc::closeV4L2Device(void)
     m_v4l2Open = false;
 }
 
-bool rccImgProc::readV4L2Frame(cv::Mat &a_frame)
+bool rccImgProc::readV4L2Frame(cv::Mat &a_frame,
+                               struct timeval &a_timestamp)
 {
     fd_set fds;
     FD_ZERO(&fds);
@@ -288,7 +288,6 @@ bool rccImgProc::readV4L2Frame(cv::Mat &a_frame)
     if(!m_v4l2Open)
         return false;
 
-    std::cout << "readV4L2Frame() waiting for select" << std::endl;
     buf.type = V4L2_BUF_TYPE_VIDEO_CAPTURE;
     buf.memory = V4L2_MEMORY_MMAP;
 
@@ -303,7 +302,6 @@ bool rccImgProc::readV4L2Frame(cv::Mat &a_frame)
         return false;
     }
 
-        std::cout << "readV4L2Frame() waiting for DQBUF" << std::endl;
     if(xioctl(m_devFd, VIDIOC_DQBUF, &buf) == -1)
     {
         std::cerr << "readV4L2Frame() VIDIOC_DQBUF failed: "
@@ -311,7 +309,21 @@ bool rccImgProc::readV4L2Frame(cv::Mat &a_frame)
         return false;
     }
 
-     // Here copy received buffer
+    if(buf.index >= m_buffers.size())
+    {
+        std::cerr << "readV4L2Frame() returned buffers index too large (" <<
+            buf.index << " > " << m_buffers.size() << ")" << std::endl;
+        return false;
+    }
+
+    // Here copy received buffer
+    cv::Mat yuvFrame(cv::Mat(m_height, m_width, CV_8UC2, m_buffers[buf.index]));
+
+    // TODO: convert to RGB - should move anyway ASAP to camera to acquire directly RGB
+    cv::cvtColor(yuvFrame, a_frame, CV_YUV2BGR_YUYV);
+
+    memcpy(&a_timestamp, &buf.timestamp, sizeof(struct timeval));
+
     // buf.index points to correct buffer
     if(xioctl(m_devFd, VIDIOC_QBUF, &buf) == -1)
     {
@@ -320,7 +332,6 @@ bool rccImgProc::readV4L2Frame(cv::Mat &a_frame)
         return false;
     }
 
-            std::cout << "readV4L2Frame() frame acquired" << std::endl;
     return true;
 }
 

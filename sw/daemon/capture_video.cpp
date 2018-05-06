@@ -24,8 +24,8 @@
 
 #include "rcc_video_streamer.h"
 
-#define TRACK_TIME
-//#define USE_OV5642
+//#define TRACK_TIME
+#define USE_OV5642
 bool strIsNumber(const std::string& s)
 {
     std::string::const_iterator it = s.begin();
@@ -193,7 +193,6 @@ int main(int argc, char *argv[])
         std::chrono::steady_clock::time_point tp2 = std::chrono::steady_clock::now();
 #endif
 
-
         if(frame.empty())
         {
 //            break;
@@ -225,13 +224,20 @@ int main(int argc, char *argv[])
 #endif
 
         tp = tp + interval;
-        std::this_thread::sleep_until(tp);
+        if(tp < std::chrono::steady_clock::now())
+        {
+            std::this_thread::sleep_until(tp);
+        }
+        else
+        {
+            std::cerr << "Warning: Loop too slow" << std::endl;
+        }
 
 #ifdef TRACK_TIME
         std::chrono::steady_clock::time_point tp4 = std::chrono::steady_clock::now();
         std::cout << " Loop: " << std::dec <<
             std::chrono::duration_cast<std::chrono::microseconds>(tp4-tp1).count()
-                  << " FrameAct: " <<
+                  << " FrameAcq: " <<
             std::chrono::duration_cast<std::chrono::microseconds>(tp2-tp1).count()
                   << " FrameWrite: " <<
             std::chrono::duration_cast<std::chrono::microseconds>(tp3-tp2).count()

@@ -24,8 +24,8 @@
 
 #include "rcc_video_streamer.h"
 
-#define TRACK_TIME
-#define USE_OV5642
+//#define TRACK_TIME
+//#define USE_OV5642
 bool strIsNumber(const std::string& s)
 {
     std::string::const_iterator it = s.begin();
@@ -217,7 +217,7 @@ int main(int argc, char *argv[])
 #endif
 
         tp = tp + interval;
-        if(tp > std::chrono::steady_clock::now())
+        if(tp < std::chrono::steady_clock::now())
         {
             std::cerr << "Warning: Loop too slow" << std::endl;
         }

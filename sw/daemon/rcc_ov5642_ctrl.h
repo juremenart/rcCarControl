@@ -27,6 +27,7 @@ public:
     typedef enum ov5642_supp_mode_e {
         ov5642_720p_video = 0,
         ov5642_vga_yuv    = 1,
+        ov5642_vga_rgb    = 2,
         ov5642_mode_nonexisting // must be last
     } ov5642_mode_t;
 

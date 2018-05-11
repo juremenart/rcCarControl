@@ -17,6 +17,7 @@
 
 #include "ov5642_720p_init.h"
 #include "ov5642_vga_yuv_init.h"
+#include "ov5642_vga_rgb_init.h"
 
 // TODO: Add logger() here instead of std::cerr
 
@@ -25,7 +26,8 @@ const uint8_t cOv5642SlaveAddr   = 0x3c;
 const rccOv5642Ctrl::ov5642_mode_table_t cOv5642ModeTable =
 {
     {  true, &ov5642_720p_init    , std::string("720p video") },
-    {  true, &ov5642_vga_yuv_init , std::string("   VGA YUV") }
+    {  true, &ov5642_vga_yuv_init , std::string("   VGA YUV") },
+    {  true, &ov5642_vga_rgb_init , std::string("   VGA RGB") }
 };
 
 

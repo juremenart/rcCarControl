@@ -1,11 +1,11 @@
-#ifndef OV5642_VGA_YUV_INIT
-#define OV5642_VGA_YUV_INIT
+#ifndef OV5642_VGA_RGB_INIT
+#define OV5642_VGA_RGB_INIT
 
 // Taken from OV5642 Camera Module - Software Application Notes:
 // http://forum.motofan.ru/index.php?act=attach&type=post&id=256766
 
-//15fps YUV mode
-rccOv5642Ctrl::ov5642_init_vect_t ov5642_vga_yuv_init = {
+//15fps RGB888 mode
+rccOv5642Ctrl::ov5642_init_vect_t ov5642_vga_rgb_init = {
   { 0x3103, 0x93 },
   { 0x3008, 0x82 },
   { 0x3017, 0x7f },
@@ -24,7 +24,7 @@ rccOv5642Ctrl::ov5642_init_vect_t ov5642_vga_yuv_init = {
 //  { 0x3011, 0x0F },  // 30fps
   { 0x3010, 0x10 },
   { 0x460c, 0x22 },
-  { 0x3815, 0x04 },
+//  { 0x3815, 0x04 },
   { 0x370c, 0xa0 },
   { 0x3602, 0xfc },
   { 0x3612, 0xff },
@@ -64,7 +64,6 @@ rccOv5642Ctrl::ov5642_init_vect_t ov5642_vga_yuv_init = {
   { 0x380b, 0xe0 },
   { 0x380e, 0x07 },
   { 0x380f, 0xd0 },
-  { 0x501f, 0x00 },
   { 0x5000, 0x4f },
   { 0x3503, 0x07 },
   { 0x3501, 0x73 },
@@ -265,10 +264,19 @@ rccOv5642Ctrl::ov5642_init_vect_t ov5642_vga_yuv_init = {
   { 0x3823, 0x00 },
   { 0x5007, 0x00 },
   { 0x5009, 0x00 },
+  { 0x471c, 0xd0 },
 
-  { 0x5011, 0x00 }, // YUV422
-  { 0x4300, 0x30 }, // YUV422
-  { 0x460c, 0x22 },
+  // RGB888
+  { 0x5011, 0x01 },
+  { 0x4300, 0x23 },
+  { 0x501f, 0x01 },
+
+  /* RGB888 */
+  { 0x460b, 0x37 },
+  { 0x3815, 0x01 },
+//  { 0x3818, 0xc1 },
+
+  // RGB888
 
   { 0x5013, 0x00 },
   { 0x519e, 0x00 },
@@ -614,4 +622,4 @@ rccOv5642Ctrl::ov5642_init_vect_t ov5642_vga_yuv_init = {
   { 0x568f, 0xaa }
 };
 
-#endif // OV5642_VGA_YUV_INIT
+#endif // OV5642_VGA_RGB_INIT

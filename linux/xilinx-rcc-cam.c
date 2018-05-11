@@ -36,9 +36,12 @@
 #define EMB_FRAME_CNT            // Embedded 16-bit frame counter in the frame itself
 
 #ifdef EMB_FRAME_CNT
+#define EMB_FRAME_CNT_DEBUG      // Print them
 // In which bytes should we embedded the frame counter
-#define EMB_FRAME_CNT_LSB        3
-#define EMB_FRAME_CNT_MSB        2
+#define EMB_HW_FRAME_CNT_LSB         1
+#define EMB_HW_FRAME_CNT_MSB         0
+#define EMB_DRV_FRAME_CNT_LSB        3
+#define EMB_DRV_FRAME_CNT_MSB        2
 #endif // EMB_FRAME_CNT
 
 typedef struct xrcc_cam_buf_s {
@@ -908,9 +911,23 @@ static irqreturn_t xrcc_cam_irq_handler(int irq, void *data)
 #ifdef EMB_FRAME_CNT
     {
         uint8_t *buf_addr = (uint8_t *)dev->vect_bufs[idx].addr;
-        buf_addr[EMB_FRAME_CNT_LSB] = dev->frame_cnt & 0xff;
-        buf_addr[EMB_FRAME_CNT_MSB] = (dev->frame_cnt>>8) & 0xff;
+        buf_addr[EMB_DRV_FRAME_CNT_LSB] = dev->frame_cnt & 0xff;
+        buf_addr[EMB_DRV_FRAME_CNT_MSB] = (dev->frame_cnt>>8) & 0xff;
         dev->frame_cnt++;
+
+#ifdef EMB_FRAME_CNT_DEBUG
+        {
+            uint16_t hw_cnt, drv_cnt;
+            // Let's also read out first 4 bytes (2 frame counters)
+            hw_cnt = (buf_addr[EMB_HW_FRAME_CNT_MSB] << 8) |
+                buf_addr[EMB_HW_FRAME_CNT_LSB];
+            drv_cnt = (buf_addr[EMB_DRV_FRAME_CNT_MSB] << 8) |
+                buf_addr[EMB_DRV_FRAME_CNT_LSB];
+
+            XRCC_DEBUG(xrcc_dev_to_dev(dev),
+                       "Frame counters: HW=%d, DRV=%d", hw_cnt, drv_cnt);
+        }
+#endif // EMB_FRAME_CNT_DEBUG
     }
 #endif // EMB_FRAME_CNT
 

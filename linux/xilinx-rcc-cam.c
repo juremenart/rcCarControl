@@ -33,21 +33,46 @@
 #define VIDEO_CTRL_INTEGRATED
 #define VDMA_CTRL_INTEGRATED
 
+#define EMB_FRAME_CNT            // Embedded 16-bit frame counter in the frame itself
+
+#ifdef EMB_FRAME_CNT
+// In which bytes should we embedded the frame counter
+#define EMB_FRAME_CNT_LSB        3
+#define EMB_FRAME_CNT_MSB        2
+#endif // EMB_FRAME_CNT
+
 typedef struct xrcc_cam_buf_s {
     struct vb2_v4l2_buffer *buf;
     dma_addr_t              addr;
     int                     registered;
 } xrcc_cam_buf_t;
 
+typedef struct xrcc_cam_fmt_s {
+    uint32_t   width;
+    uint32_t   height;
+    int        depth; // bpp
+    uint32_t   fourcc;
+    char      *desc;
+} xrcc_cam_fmt_t;
+
+/* Default is index 0 */
+const xrcc_cam_fmt_t xrcc_cam_formats[] =
+{
+    { 640, 480, 2, V4L2_PIX_FMT_YUYV,  "YUV420" },
+    { 640, 480, 3, V4L2_PIX_FMT_RGB24, "RGB888" }
+};
+
+const uint32_t xrcc_cam_formats_num = ARRAY_SIZE(xrcc_cam_formats);
+
 typedef struct xrcc_cam_dev_s {
     // number of frame buffers, must be set only once at the beginning
-    // TODO: Check if not better to have size/bpp/buf_size info only in
-    //       v4l2_pix_format
-    uint32_t                   frm_cnt;
-    uint32_t                   width, height, bpp;
-    uint32_t                   buf_size; // automatically calculated when allocating buffers
+    uint32_t                   num_frm_bufs;
+    int                        fmt_idx;
     int                        port;
 
+#ifdef EMB_FRAME_CNT
+    uint16_t                   frame_cnt; // frame/IRQ counter
+#endif
     /* Device structures */
     struct device             *dev;
     struct v4l2_device         v4l2_dev;
@@ -185,7 +210,7 @@ static void video_ctrl_get_stats(xrcc_cam_dev_t *dev,
     u32 f_cnts    = video_ctrl_read(dev, VIDEO_CTRL_RX_FRAME_CNTS);
 
     *height     = (size_stat >> 16) & 0xFFF;
-    *width      =  (size_stat >> 0)  & 0xFFF;
+    *width      = (size_stat >> 0)  & 0xFFF;
     *err_flags  = (size_stat & 0x80008000);
     *frame_cnt  = f_cnts;
     *frame_len  = f_len;
@@ -327,7 +352,8 @@ static inline void vdma_ctrl_run(xrcc_cam_dev_t *dev)
     }
 }
 
-static int vdma_ctrl_configure(xrcc_cam_dev_t *dev)
+static int vdma_ctrl_configure(xrcc_cam_dev_t *dev, uint32_t width,
+                               uint32_t height, uint32_t bpp)
 {
     u32 i;
 
@@ -350,7 +376,7 @@ static int vdma_ctrl_configure(xrcc_cam_dev_t *dev)
     vdma_ctrl_write(dev, VDMA_CTRL_REG_INDEX, 0);
 
     /* Fill in all buffer addresses */
-    for(i = 0; i < dev->frm_cnt; i++)
+    for(i = 0; i < dev->num_frm_bufs; i++)
     {
         if((dev->vect_bufs[i].buf == NULL) ||
            (dev->vect_bufs[i].addr == 0))
@@ -366,11 +392,11 @@ static int vdma_ctrl_configure(xrcc_cam_dev_t *dev)
     }
 
     /* Set HSIZE & FRMDLY_STRIDE */
-    vdma_ctrl_write(dev, VDMA_CTRL_HSIZE, (dev->width * dev->bpp));
-    vdma_ctrl_write(dev, VDMA_CTRL_FRMDLY_STRIDE, (dev->width * dev->bpp));
+    vdma_ctrl_write(dev, VDMA_CTRL_HSIZE, (width * bpp));
+    vdma_ctrl_write(dev, VDMA_CTRL_FRMDLY_STRIDE, (width * bpp));
 
     // Set VSIZE - MUST BE LAST! */
-    vdma_ctrl_write(dev, VDMA_CTRL_VSIZE, dev->height);
+    vdma_ctrl_write(dev, VDMA_CTRL_VSIZE, height);
 
     return 0;
 }
@@ -387,7 +413,7 @@ static int xrcc_cam_queue_setup(struct vb2_queue *vq,
                "xrcc_cam_queue_setup() start, num_buffers=%d nbuffers=%d",
                vq->num_buffers, *nbuffers);
 
-    *nbuffers = dev->frm_cnt;
+    *nbuffers = dev->num_frm_bufs;
 
     /* Make sure the image size is large enough. */
     if(*nplanes)
@@ -434,7 +460,7 @@ static void xrcc_cam_buffer_queue(struct vb2_buffer *vb)
     struct vb2_v4l2_buffer *vbuf = to_vb2_v4l2_buffer(vb);
     xrcc_cam_dev_t *dev = vb2_get_drv_priv(vb->vb2_queue);
     dma_addr_t addr = vb2_dma_contig_plane_dma_addr(vb, 0);
-    xrcc_dma_buffer_t *buf = to_xrcc_dma_buffer(vbuf);
+//    xrcc_dma_buffer_t *buf = to_xrcc_dma_buffer(vbuf);
     // find the next free slot
     int idx, found = 0;
 
@@ -443,7 +469,7 @@ static void xrcc_cam_buffer_queue(struct vb2_buffer *vb)
                (uint32_t)addr);
 
     spin_lock_irq(&dev->queued_lock);
-    for(idx = 0; idx < dev->frm_cnt; idx++)
+    for(idx = 0; idx < dev->num_frm_bufs; idx++)
     {
         if((dev->vect_bufs[idx].buf == NULL) ||
            (dev->vect_bufs[idx].addr == addr))
@@ -458,8 +484,8 @@ static void xrcc_cam_buffer_queue(struct vb2_buffer *vb)
         /* TODO: We should actually free all buffers */
         XRCC_ERR(xrcc_dev_to_dev(dev),
                  "xrcc_cam_buffer_queue(): Too many buffers?");
-        vb2_buffer_done(&buf->buf.vb2_buf, VB2_BUF_STATE_ERROR);
-        spin_unlock_irq(&dev->queued_lock);
+//        vb2_buffer_done(&buf->buf.vb2_buf, VB2_BUF_STATE_ERROR);
+//        spin_unlock_irq(&dev->queued_lock);
         return;
     }
 
@@ -479,12 +505,24 @@ static int xrcc_cam_start_streaming(struct vb2_queue *vq, unsigned int count)
 {
     xrcc_cam_dev_t *dev = vb2_get_drv_priv(vq);
 //    xrcc_dma_buffer_t *buf, *nbuf;
+    uint32_t width,height,bpp;
+
 
     if(!dev)
     {
         printk("Don't have any private structure?!");
         return -1;
     }
+
+    if(dev->fmt_idx >= xrcc_cam_formats_num)
+    {
+        XRCC_ERR(xrcc_dev_to_dev(dev),
+                 "xrcc_cam_start_streaming(): Format index out of range");
+        return -EINVAL;
+    }
+    width = xrcc_cam_formats[dev->fmt_idx].width;
+    height = xrcc_cam_formats[dev->fmt_idx].height;
+    bpp = xrcc_cam_formats[dev->fmt_idx].depth;
 
     XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_start_streaming()");
 
@@ -493,10 +531,10 @@ static int xrcc_cam_start_streaming(struct vb2_queue *vq, unsigned int count)
 
     // We have everything we need - we have all buffers reserved
     // so we should configure VDMA engine and started the stream
-    vdma_ctrl_configure(dev);
+    vdma_ctrl_configure(dev, width, height, bpp);
 
 #ifdef VIDEO_CTRL_INTEGRATED
-    video_ctrl_set_size(dev, dev->width, dev->height, dev->bpp);
+    video_ctrl_set_size(dev, width, height, bpp);
     video_ctrl_run(dev);
     video_ctrl_clear_err(dev);
     video_ctrl_inten(dev, 1);
@@ -514,7 +552,7 @@ static void xrcc_cam_stop_streaming(struct vb2_queue *vq)
 
     XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_stop_streaming()");
 
-    for(i = 0; i < dev->frm_cnt; i++)
+    for(i = 0; i < dev->num_frm_bufs; i++)
     {
         spin_lock_irq(&dev->queued_lock);
         if((dev->vect_bufs[i].addr != 0) &&
@@ -562,7 +600,6 @@ static int xrcc_cam_querycap(struct file *file, void *fh,
 
     cap->device_caps = V4L2_CAP_VIDEO_CAPTURE | V4L2_CAP_STREAMING;
 
-    /* TODO: Which driver? */
     strlcpy(cap->driver, "xrcc-cam", sizeof(cap->driver));
     strlcpy(cap->card, dev->video.name, sizeof(cap->card));
     snprintf(cap->bus_info, sizeof(cap->bus_info), "platform:%s:%u",
@@ -572,23 +609,17 @@ static int xrcc_cam_querycap(struct file *file, void *fh,
     return 0;
 }
 
-/* TODO: Add more formats */
 static int xrcc_cam_enum_format(struct file *file, void *fh,
                                 struct v4l2_fmtdesc *f)
 {
-    struct v4l2_fh *vfh = file->private_data;
-    xrcc_cam_dev_t *dev = to_xrcc_cam_dev(vfh->vdev);
-
-    const char description[] = "4:2:2, packed, YUYV";
-    if(f->index > 0)
+    if(f->index >= xrcc_cam_formats_num)
     {
         return -EINVAL;
     }
 
-    f->pixelformat = dev->format.pixelformat;
-
-    // pixelformat = V4L2_PIX_FMT_YUYV, description: "4:2:2, packed, YUYV"
-    strlcpy(f->description, (char *)&description[0], sizeof(f->description));
+    f->pixelformat = xrcc_cam_formats[f->index].fourcc;
+    strlcpy(f->description, (char *)&xrcc_cam_formats[f->index].desc[0],
+            sizeof(f->description));
 
     return 0;
 }
@@ -599,9 +630,83 @@ static int xrcc_cam_get_format(struct file *file, void *fh,
     struct v4l2_fh *vfh = file->private_data;
     xrcc_cam_dev_t *dev = to_xrcc_cam_dev(vfh->vdev);
 
+    if(format->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+    {
+        return -EINVAL;
+    }
+
     format->fmt.pix = dev->format;
 
     return 0;
+}
+
+static int __xrcc_cam_do_try_fmt(xrcc_cam_dev_t *dev,
+                                 struct v4l2_format *format)
+{
+    struct v4l2_pix_format *pix = &format->fmt.pix;
+    int fmt_idx, fmt_found;
+
+    // First fill in the pix fmt that are not negotiable :)
+    pix->colorspace = dev->format.colorspace;
+    pix->field      = dev->format.field;
+
+    // Go over the table & try to get the match of pixelformat & size
+    fmt_found = 0;
+    for(fmt_idx = 0; fmt_idx < xrcc_cam_formats_num; fmt_idx++)
+    {
+        if((pix->width       == xrcc_cam_formats[fmt_idx].width)  &&
+           (pix->height      == xrcc_cam_formats[fmt_idx].height) &&
+           (pix->pixelformat == xrcc_cam_formats[fmt_idx].fourcc))
+        {
+            // Aren't we lucky - we have exactly correct match :) use it
+            fmt_found = 1;
+            break;
+        }
+    }
+
+    if(fmt_found)
+    {
+        // recalculate size requirements just to be sure
+        pix->bytesperline = pix->width * xrcc_cam_formats[fmt_idx].depth;
+        pix->sizeimage =
+            pix->width * pix->height * xrcc_cam_formats[fmt_idx].depth;
+        XRCC_DEBUG(xrcc_dev_to_dev(dev),
+                   "__xrcc_cam_do_try_fmt() exact match");
+
+        return fmt_idx;
+    }
+
+    // otherwise? Let's check first pixelformat... and then size
+    fmt_found = 0;
+    for(fmt_idx = 0; fmt_idx < xrcc_cam_formats_num; fmt_idx++)
+    {
+        if(pix->pixelformat == xrcc_cam_formats[fmt_idx].fourcc)
+        {
+            fmt_found = 1;
+            break;
+        }
+    }
+
+    // requested format not found - select the default (format & size) and
+    // return
+    if(!fmt_found)
+    {
+        XRCC_ERR(xrcc_dev_to_dev(dev), "__xrcc_cam_do_try_fmt()"
+                 " unsupported pixelformat, using default");
+        fmt_idx = 0;
+        pix->pixelformat = xrcc_cam_formats[fmt_idx].fourcc;
+    }
+
+    /* TODO: Let's try to do something with the size... */
+    /* Generally we should go over array and find the most suitable
+       (the closest...) */
+    pix->width        = xrcc_cam_formats[fmt_idx].width;
+    pix->height       = xrcc_cam_formats[fmt_idx].height;
+    pix->bytesperline = pix->width * xrcc_cam_formats[fmt_idx].depth;
+    pix->sizeimage =
+        pix->width * pix->height * xrcc_cam_formats[fmt_idx].depth;
+
+    return fmt_idx;
 }
 
 static int xrcc_cam_try_format(struct file *file, void *fh,
@@ -609,14 +714,13 @@ static int xrcc_cam_try_format(struct file *file, void *fh,
 {
     struct v4l2_fh *vfh = file->private_data;
     xrcc_cam_dev_t *dev = to_xrcc_cam_dev(vfh->vdev);
-    struct v4l2_pix_format *pix = &format->fmt.pix;
 
-    XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_try_format() start");
+    if(format->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+    {
+        return -EINVAL;
+    }
 
-    // TODO: ??? Is this fine?
-    memcpy(pix, &dev->format, sizeof(struct v4l2_pix_format));
-
-    XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_try_format() end");
+    __xrcc_cam_do_try_fmt(dev, format);
 
     return 0;
 }
@@ -661,11 +765,18 @@ static int xrcc_cam_g_selection(struct file *file, void *fh,
     if (s->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
         return -EINVAL;
 
+    if(dev->fmt_idx >= xrcc_cam_formats_num)
+    {
+        XRCC_ERR(xrcc_dev_to_dev(dev),
+                 "xrcc_cam_g_sel(): Format index out of range");
+        return -EINVAL;
+    }
+
     // TODO: selection not supported yet
     s->r.left = 0;
     s->r.top = 0;
-    s->r.width = dev->width;
-    s->r.height = dev->height;
+    s->r.width = xrcc_cam_formats[dev->fmt_idx].width;
+    s->r.height = xrcc_cam_formats[dev->fmt_idx].height;
     return 0;
 }
 
@@ -703,12 +814,12 @@ static int xrcc_cam_set_format(struct file *file, void *fh,
     struct v4l2_fh *vfh = file->private_data;
     xrcc_cam_dev_t *dev = to_xrcc_cam_dev(vfh->vdev);
     struct v4l2_pix_format *pix = &format->fmt.pix;
-    int memcmp_res = memcmp(pix, &dev->format, sizeof(struct v4l2_pix_format));
+    int fmt_idx;
 
-    // TODO: xrcc_cam_set_format() currently supports only 1 format!
-
-    XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_set_format() start, memcmp=%d",
-               memcmp_res);
+    if(format->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
+    {
+        return -EINVAL;
+    }
 
     if(vb2_is_busy(&dev->queue))
     {
@@ -717,26 +828,16 @@ static int xrcc_cam_set_format(struct file *file, void *fh,
         return -EBUSY;
     }
 
-    /* TODO: If want to still support only 1 format - use memcmp */
-    if((pix->pixelformat != dev->format.pixelformat) ||
-       (pix->width       != dev->format.width)       ||
-       (pix->height      != dev->format.height))
-    {
+    fmt_idx = __xrcc_cam_do_try_fmt(dev, format);
 
-        XRCC_DEBUG(xrcc_dev_to_dev(dev), "pixelformat: %d != %d",
-                   pix->pixelformat, dev->format.pixelformat);
-        XRCC_DEBUG(xrcc_dev_to_dev(dev), "width: %d != %d",
-                   pix->width, dev->format.width);
-        XRCC_DEBUG(xrcc_dev_to_dev(dev), "height: %d != %d",
-                   pix->height, dev->format.height);
-        XRCC_DEBUG(xrcc_dev_to_dev(dev), "field: %d != %d",
-                   pix->field, dev->format.field);
-        XRCC_ERR(xrcc_dev_to_dev(dev),
-                 "xrcc_cam_set_format() incorrect parameters");
-        return -EINVAL;
-    }
+    XRCC_DEBUG(xrcc_dev_to_dev(dev),
+               "xrcc_cam_set_format() using format with index %d", fmt_idx);
 
-    XRCC_DEBUG(xrcc_dev_to_dev(dev), "xrcc_cam_set_format() end");
+    // Update our format structure
+    // TODO: should we also trigger the reservation of new buffers? Or should
+    // user space take care of this?
+    memcpy(&dev->format, pix, sizeof(struct v4l2_pix_format));
+    dev->fmt_idx = fmt_idx;
 
     return 0;
 }
@@ -796,13 +897,23 @@ static irqreturn_t xrcc_cam_irq_handler(int irq, void *data)
                "xrcc_cam_irq_handler() rx_ctrl_reg=0x%08x",
                rx_ctrl_reg);
 
-    idx = video_ctrl_get_idx(rx_ctrl_reg, dev->frm_cnt);
+    idx = video_ctrl_get_idx(rx_ctrl_reg, dev->num_frm_bufs);
 
     XRCC_DEBUG(xrcc_dev_to_dev(dev),
                "New frame index=%d in buffer address=0x%08x available (reg=%d)",
                idx, dev->vect_bufs[idx].addr, dev->vect_bufs[idx].registered);
 
     spin_lock(&dev->queued_lock);
+
+#ifdef EMB_FRAME_CNT
+    {
+        uint8_t *buf_addr = (uint8_t *)dev->vect_bufs[idx].addr;
+        buf_addr[EMB_FRAME_CNT_LSB] = dev->frame_cnt & 0xff;
+        buf_addr[EMB_FRAME_CNT_MSB] = (dev->frame_cnt>>8) & 0xff;
+        dev->frame_cnt++;
+    }
+#endif // EMB_FRAME_CNT
+
     if(dev->vect_bufs[idx].registered)
     {
         dev->vect_bufs[idx].registered = 0;
@@ -824,19 +935,21 @@ static irqreturn_t xrcc_cam_irq_handler(int irq, void *data)
 static int xrcc_cam_video_config(xrcc_cam_dev_t *dev)
 {
     int err = 0;
+    int fmt_idx = dev->fmt_idx;
 
     mutex_init(&dev->lock);
     INIT_LIST_HEAD(&dev->queued_bufs);
     spin_lock_init(&dev->queued_lock);
 
-    /* TODO: Should be initialized together with size/BPP... */
-    dev->format.pixelformat  = V4L2_PIX_FMT_YUYV;
+    dev->format.pixelformat  = xrcc_cam_formats[fmt_idx].fourcc;
     dev->format.colorspace   = V4L2_COLORSPACE_SRGB;
     dev->format.field        = V4L2_FIELD_ANY;
-    dev->format.width        = dev->width;
-    dev->format.height       = dev->height;
-    dev->format.bytesperline = dev->width * dev->bpp;
-    dev->format.sizeimage    = dev->width * dev->height * dev->bpp;
+    dev->format.width        = xrcc_cam_formats[fmt_idx].width;
+    dev->format.height       = xrcc_cam_formats[fmt_idx].height;
+    dev->format.bytesperline =
+        xrcc_cam_formats[fmt_idx].width * xrcc_cam_formats[fmt_idx].depth;
+    dev->format.sizeimage    =  xrcc_cam_formats[fmt_idx].width *
+        xrcc_cam_formats[fmt_idx].height * xrcc_cam_formats[fmt_idx].depth;
 
     dev->pad.flags = MEDIA_PAD_FL_SINK;
     err = media_entity_pads_init(&dev->video.entity, 1, &dev->pad);
@@ -869,7 +982,7 @@ static int xrcc_cam_video_config(xrcc_cam_dev_t *dev)
     dev->queue.buf_struct_size    = sizeof(xrcc_dma_buffer_t);
     dev->queue.ops                = &xrcc_cam_queue_qops;
     dev->queue.mem_ops            = &vb2_dma_contig_memops;
-    dev->queue.min_buffers_needed = dev->frm_cnt;
+    dev->queue.min_buffers_needed = dev->num_frm_bufs;
     dev->queue.timestamp_flags    =
         V4L2_BUF_FLAG_TIMESTAMP_MONOTONIC | V4L2_BUF_FLAG_TSTAMP_SRC_EOF;
     dev->queue.dev = xrcc_dev_to_dev(dev);
@@ -962,10 +1075,7 @@ static int xrcc_cam_v4l2_init(xrcc_cam_dev_t *dev)
 
 static int xrcc_cam_probe(struct platform_device *pdev)
 {
-    const uint32_t frm_cnt = 3; // TODO: Get that info from rx_chan!
-    const uint32_t width  = 640;
-    const uint32_t height = 480;
-    const uint32_t bpp = 2;
+    const uint32_t num_frm_bufs = 3; // TODO: Get that info from rx_chan!
 
     xrcc_cam_dev_t *xrcc_dev;
     int err;
@@ -988,7 +1098,7 @@ static int xrcc_cam_probe(struct platform_device *pdev)
     // TODO: Get the number of buffers from DMA driver 'somehow'
 //    XRCC_INFO(&pdev->dev, "Reading num-fstores");
 //    err = of_property_read_u32(rx_chan->dev->device.of_node,
-//                               "xlnx,num-fstores", &frm_cnt);
+//                               "xlnx,num-fstores", &num_frm_bufs);
 //    if(err < 0)
 //    {
 //        XRCC_ERR(&pdev->dev, "Number of frame buffers not found, "
@@ -997,10 +1107,7 @@ static int xrcc_cam_probe(struct platform_device *pdev)
 //    }
 
     // start filling the structure
-    xrcc_dev->frm_cnt = frm_cnt;
-    xrcc_dev->width   = width;
-    xrcc_dev->height  = height;
-    xrcc_dev->bpp     = bpp;
+    xrcc_dev->num_frm_bufs = num_frm_bufs;
 
     err = xrcc_cam_v4l2_init(xrcc_dev);
     if(err)
@@ -1063,7 +1170,7 @@ static int xrcc_cam_probe(struct platform_device *pdev)
 
     xrcc_dev->vect_bufs =
         (xrcc_cam_buf_t *)devm_kzalloc(&pdev->dev,
-                                       sizeof(xrcc_cam_buf_t)*xrcc_dev->frm_cnt,
+                                       sizeof(xrcc_cam_buf_t)*xrcc_dev->num_frm_bufs,
                                        GFP_ATOMIC);
     if(xrcc_dev->vect_bufs == NULL)
     {
@@ -1071,7 +1178,7 @@ static int xrcc_cam_probe(struct platform_device *pdev)
                  "Can not locate vector buffers");
         return -ENOMEM;
     }
-    memset(xrcc_dev->vect_bufs, 0, sizeof(xrcc_cam_buf_t)*xrcc_dev->frm_cnt);
+    memset(xrcc_dev->vect_bufs, 0, sizeof(xrcc_cam_buf_t)*xrcc_dev->num_frm_bufs);
 
     XRCC_INFO(xrcc_dev_to_dev(xrcc_dev), "RCC Camera Driver Probed");
 
@@ -1112,6 +1219,6 @@ static struct platform_driver xrcc_cam_driver = {
 
 module_platform_driver(xrcc_cam_driver);
 
-MODULE_AUTHOR("Jure Menart (juremenart@gmail.com)");
+MODULE_AUTHOR("Jure Menart (jure@menart.ch)");
 MODULE_DESCRIPTION("RC Car Control Camera Driver");
 MODULE_LICENSE("GPL v2");

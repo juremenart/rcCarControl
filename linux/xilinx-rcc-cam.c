@@ -25,8 +25,8 @@
 #include <media/videobuf2-v4l2.h>
 #include <media/videobuf2-dma-contig.h>
 
-//#define XRCC_DEBUG(...) dev_info(__VA_ARGS__)
 #define XRCC_DEBUG(...)
+//#define XRCC_DEBUG(...) dev_info(__VA_ARGS__)
 #define XRCC_INFO(...)  dev_info(__VA_ARGS__)
 #define XRCC_ERR(...)   dev_err(__VA_ARGS__)
 
@@ -796,6 +796,9 @@ static int xrcc_cam_g_parm(struct file *file, void *fh,
                            struct v4l2_streamparm *a)
 {
 //    xrcc_cam_dev_t *dev = file->private_data;
+
+    a->parm.output.capability   = V4L2_CAP_TIMEPERFRAME;
+    a->parm.output.timeperframe = (struct v4l2_fract) { 1000, 15000 };
 
     /* TODO: Not supported yet */
     return 0;

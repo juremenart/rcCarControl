@@ -12,6 +12,8 @@ interface rx_cfg_if
    logic [31:0] frame_length;
    logic        cam_pwdn;
    logic        cam_rstn;
+   logic        emb_frame_cnt;
+
    logic [10:0] data_fifo_start;
    logic [10:0] data_fifo_line_len;
 
@@ -37,6 +39,7 @@ interface rx_cfg_if
               input  frame_length,
               output cam_pwdn,
               output cam_rstn,
+              output emb_frame_cnt,
               output data_fifo_start,
               output data_fifo_line_len,
 
@@ -61,6 +64,7 @@ interface rx_cfg_if
               output frame_length,
               input  cam_pwdn,
               input  cam_rstn,
+              input  emb_frame_cnt,
               input  data_fifo_start,
               input  data_fifo_line_len,
 
@@ -86,6 +90,7 @@ interface rx_cfg_if
               input frame_length,
               input cam_pwdn,
               input cam_rstn,
+              input emb_frame_cnt,
               input data_fifo_start,
               input data_fifo_line_len,
 

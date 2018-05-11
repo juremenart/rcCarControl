@@ -65,6 +65,7 @@ module video_ctrl_axi #(
    reg [5:0]               vdma_frame_ptr_i_r; // used for interrupt generation
    reg                     vdma_frame_inten_r;
    reg                     vdma_frame_int_r, vdma_frame_int_clear_r;
+   reg                     emb_frame_cnt_r;
 
    // Write registers
    always_ff @(posedge axi_bus.ACLK)
@@ -85,6 +86,7 @@ module video_ctrl_axi #(
           vdma_frame_ptr_o_r     <= '0;
           vdma_frame_inten_r     <= '0;
           vdma_frame_int_clear_r <= 1'b0;
+          emb_frame_cnt_r        <= 1'b0;
        end
      else
        begin
@@ -115,6 +117,7 @@ module video_ctrl_axi #(
                       cam_pwdn               <= axi_bus.WDATA[3];
                       vdma_frame_inten_r     <= axi_bus.WDATA[4];
                       vdma_frame_int_clear_r <= axi_bus.WDATA[5];
+                      emb_frame_cnt_r        <= axi_bus.WDATA[6];
 
                       vdma_frame_ptr_o_r <= axi_bus.WDATA[21:16];
 
@@ -149,7 +152,8 @@ module video_ctrl_axi #(
             RX_CTRL_ADDR:
               axi_bus.RDATA <= { {2{1'b0}}, vdma_frame_ptr_i,
                                  {2{1'b0}}, vdma_frame_ptr_o_r,
-                                 {10{1'b0}}, vdma_frame_int_r, vdma_frame_inten_r,
+                                 {9{1'b0}}, emb_frame_cnt_r,
+                                 vdma_frame_int_r, vdma_frame_inten_r,
                                  cam_pwdn, cam_rstn, pure_bt656, rx_enable };
             RX_SIZE_STAT_ADDR:
               axi_bus.RDATA <= rx_cfg.size_status;
@@ -188,6 +192,8 @@ module video_ctrl_axi #(
 
    assign rx_cfg.data_fifo_start    = data_fifo_start_read;
    assign rx_cfg.data_fifo_line_len = data_fifo_line_len;
+
+   assign rx_cfg.emb_frame_cnt      = emb_frame_cnt_r;
 
    assign vdma_frame_ptr_o = vdma_frame_ptr_o_r;
 

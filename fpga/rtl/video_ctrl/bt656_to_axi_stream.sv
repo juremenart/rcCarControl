@@ -52,9 +52,16 @@ module bt656_to_axi_stream
    logic         inc_line_cnt;
    logic         latch_pixel_cnt;
 
+   // embedding of frame counter control
+   logic         emb_frame_cnt_next_data; // signalizes we should embedded when next data is valid
+   logic [15:0]  emb_frame_cnt;
+   logic         emb_frame_msb, emb_frame_lsb;
+   logic         emb_frame_waiting;
+
    assign rst_line_cnt = in_new_frame;
    assign inc_line_cnt = (!rx_cfg.pure_bt656 && !in_hblank && bt656_stream_i.HREF) ||
                          (rx_cfg.pure_bt656 && sav_det);
+
 
    always_ff @(posedge clk)
      if(!rstn)
@@ -71,9 +78,11 @@ module bt656_to_axi_stream
 
    always_comb
      begin
-        nstate          = state;
-        rst_pixel_cnt   = 1'b1;
-        latch_pixel_cnt = 1'b0;
+        nstate                  = state;
+        rst_pixel_cnt           = 1'b1;
+        latch_pixel_cnt         = 1'b0;
+        emb_frame_cnt_next_data = 1'b0;
+
         case (state)
           FSM_IDLE:
             begin
@@ -82,6 +91,9 @@ module bt656_to_axi_stream
                if(in_new_frame && rx_cfg.pure_bt656)
                  nstate = FSM_SAV;
                else if(in_new_frame && !rx_cfg.pure_bt656)
+                 if(rx_cfg.emb_frame_cnt)
+                   emb_frame_cnt_next_data = 1'b1;
+
                  nstate = FSM_BLANKING;
             end
           FSM_SAV:
@@ -132,6 +144,30 @@ module bt656_to_axi_stream
         endcase; // case (state)
      end // always_comb
 
+   assign emb_frame_msb = emb_frame_waiting &&
+                          (state == FSM_BLANKING) && (nstate == FSM_VDATA);
+   assign emb_frame_lsb = emb_frame_waiting &&
+                          (state == FSM_VDATA) && (nstate == FSM_VDATA);
+
+   always_ff @(posedge clk)
+     if(!rstn)
+       begin
+          emb_frame_waiting <= 1'b0;
+          emb_frame_cnt     <=   '0;
+       end
+     else
+       begin
+          if(emb_frame_cnt_next_data)
+            begin
+               emb_frame_waiting <= 1'b1;
+               emb_frame_cnt     <= rx_cfg.frame_cnts[15:0];
+            end
+          if(emb_frame_lsb)
+            begin
+               emb_frame_waiting <= 1'b0;
+            end
+       end
+
    // Input data FFs
    always_ff @(posedge clk)
      if(!rstn)
@@ -145,7 +181,14 @@ module bt656_to_axi_stream
      else
        begin
           int i;
-          in_data[0] <= bt656_stream_i.DATA;
+
+          if(emb_frame_lsb)
+            in_data[0] <= emb_frame_cnt[7:0];
+          else if(emb_frame_msb)
+            in_data[0] <= emb_frame_cnt[15:8];
+          else
+            in_data[0] <= bt656_stream_i.DATA;
+
           for(i = 1; i < input_data_ffs; i++)
             begin
                in_data[i] <= in_data[i-1];

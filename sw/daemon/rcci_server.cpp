@@ -128,20 +128,15 @@ void rcciServer::writeServiceLog(std::string &str)
         sockaddr_in *sockAddr = (sockaddr_in *)&(*it);
         socklen_t adrlen = sizeof(*sockAddr);
 
-        sockaddr_in srvAddr;
-        socklen_t srvLen = sizeof(srvAddr);
-
-        getsockname(mServices[rcci_service_logging].fd, (struct sockaddr *)&srvAddr,&srvLen);
-
-        char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
-        getnameinfo((const sockaddr *)sockAddr, sizeof(*sockAddr),
-                    hbuf, sizeof(hbuf), sbuf, sizeof(sbuf),
-                    (NI_NUMERICHOST | NI_NUMERICSERV));
-
         bytes = sendto(mServices[rcci_service_logging].fd, str.c_str(), str.length(), 0,
                        (sockaddr *)sockAddr, adrlen);
         if(bytes < 0)
         {
+            char hbuf[NI_MAXHOST], sbuf[NI_MAXSERV];
+            getnameinfo((const sockaddr *)sockAddr, sizeof(*sockAddr),
+                        hbuf, sizeof(hbuf), sbuf, sizeof(sbuf),
+                        (NI_NUMERICHOST | NI_NUMERICSERV));
+
             std::cerr << "writeServiceLog() failed sendto() to " << hbuf << ":" <<
                 sbuf << ": " << strerror(errno) << std::endl;
         }

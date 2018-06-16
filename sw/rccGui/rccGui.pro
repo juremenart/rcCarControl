@@ -4,7 +4,7 @@
 #
 #-------------------------------------------------
 
-QT       += core gui sensors
+QT       += core gui sensors multimedia multimediawidgets
 
 # Enable to use QWT for graphs - not used for now (from old projects)
 # CONFIG   += qwt
@@ -94,9 +94,9 @@ OBJECTS_DIR = $${DESTDIR}/obj/
 RESOURCES = rccGui.qrc
 
 # Application
-SOURCES += src/main.cpp src/mainwindow.cpp src/rccCtrlWidget.cpp src/rccConnWidget.cpp ../interface/rcci_client.cpp src/rccDrvWidget.cpp
+SOURCES += src/main.cpp src/mainwindow.cpp src/rccCtrlWidget.cpp src/rccConnWidget.cpp ../interface/rcci_client.cpp src/rccDrvWidget.cpp src/rccCamWidget.cpp
 
-HEADERS += include/mainwindow.h include/rccConnWidget.h include/rccCtrlWidget.h ../interface/rcci_client.h ../interface/rcci_type.h include/rccLogReadThread.h include/rccDrvWidget.h
+HEADERS += include/mainwindow.h include/rccConnWidget.h include/rccCtrlWidget.h ../interface/rcci_client.h ../interface/rcci_type.h include/rccLogReadThread.h include/rccDrvWidget.h include/rccCamWidget.h
 
 FORMS   += ui/mainwindow.ui
 
@@ -106,3 +106,6 @@ FORMS   += ui/mainwindow.ui
 #
 #  QMAKE_CXXFLAGS += -DGRAPH_QWT
 #}
+
+DISTFILES += \
+    AndroidManifest.xml

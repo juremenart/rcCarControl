@@ -4,10 +4,21 @@
 #include <thread>
 #include <condition_variable>
 
+#define USE_UDP_MULTICAST
+
+#ifdef USE_LIVE555
 // Live555 includes
 #include <liveMedia.hh>
 #include <BasicUsageEnvironment.hh>
 #include <GroupsockHelper.hh>
+#endif // USE_LIVE555
+
+#ifdef USE_UDP_MULTICAST
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
+#endif // USE_UDP_MULTICAST
 
 // OpenCV
 #include <opencv2/opencv.hpp>
@@ -22,9 +33,16 @@ private:
     // this is index to this table (removal not possible right now)
     typedef struct rcc_streams_info_s {
         std::string          name;
-        std::string          url;
         int                  fps;
+#ifdef USE_LIVE555
+        std::string          url;
         LiveCamDeviceSource *devSource;
+#endif // USE_LIVE555
+#ifdef USE_UDP_MULTICAST
+        int                  sock;
+        int                  port;
+        struct sockaddr_in   addr;
+#endif // USE_UDP_MULTICAST
     } rcc_streams_info_t;
 
 public:
@@ -36,13 +54,24 @@ public:
     bool            startServer(int port);
     bool            stopServer(void);
     bool            isServerStarted(void);
-    rcc_stream_id_t addStream(const char *streamName, int fps);
+    rcc_stream_id_t addStream(const char *streamName, int fps, int port = 0);
 
     bool encodeAndStream(rccVideoStreamer::rcc_stream_id_t stream_id,
                          cv::Mat &frame);
 private:
+#ifdef USE_LIVE555
     void serverThread(int port);
+#endif // USE_LIVE555
 
+#ifdef USE_UDP_MULTICAST
+    int openMulticastSocket(void);
+    int closeMulticastSocket(int fd);
+    int sendMulticastData(rccVideoStreamer::rcc_stream_id_t stream_id,
+                          cv::Mat &frame);
+#endif // USE_UDP_MULTICAST
+    // Server stuff
+
+#ifdef USE_LIVE555
     // Server stuff
     char                    mServerStarted;
     std::condition_variable mServerInitSuccess; // used to signal when server is up
@@ -52,9 +81,8 @@ private:
     // Live streaming stuff
     UsageEnvironment    *mLiveEnv;
     TaskScheduler       *mLiveScheduler;
-    RTPSink             *mLiveSink;
     RTSPServer          *mRtspServer;
-    RTCPInstance        *mLiveRtcp;
+#endif // USE_LIVE555
 
     std::vector<rcc_streams_info_t> mRccStreams;
 };

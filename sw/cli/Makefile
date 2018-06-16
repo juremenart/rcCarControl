@@ -1,4 +1,4 @@
-TARGETS=read_console send_drive_data test_axi access_v4l2
+TARGETS=read_console send_drive_data test_axi access_v4l2 read_video_stream
 
 HEADERS=
 SOURCES=

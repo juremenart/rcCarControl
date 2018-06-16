@@ -9,7 +9,7 @@
 MainWindow::MainWindow(QWidget *parent) :
     QMainWindow(parent), ui(new Ui::MainWindow),
     mMainWidget(NULL), mMainLayout(NULL), mTabWidget(NULL),
-    mCtrlWidget(NULL), mDrvWidget(NULL)
+    mCtrlWidget(NULL), mDrvWidget(NULL), mCamWidget(NULL)
 {
     ui->setupUi(this);
 
@@ -19,6 +19,7 @@ MainWindow::MainWindow(QWidget *parent) :
 
     mCtrlWidget = new rccCtrlWidget(this);
     mDrvWidget  = new rccDrvWidget(this);
+    mCamWidget  = new rccCamWidget(this);
 
     // Connect some signals/slots for communication
     // mDrvWidget->mCtrlWidget
@@ -32,6 +33,7 @@ MainWindow::MainWindow(QWidget *parent) :
 
     mTabWidget->addTab(mCtrlWidget, tr("Ctrl"));
     mTabWidget->addTab(mDrvWidget, tr("Drv"));
+    mTabWidget->addTab(mCamWidget, tr("Cam"));
 
     mMainLayout->addWidget(mTabWidget);
 
@@ -43,6 +45,7 @@ MainWindow::MainWindow(QWidget *parent) :
 MainWindow::~MainWindow()
 {
 //    DEL_WIDGET(mDrvWidget);
+    DEL_WIDGET(mCamWidget);
     DEL_WIDGET(mCtrlWidget);
 
     delete ui;

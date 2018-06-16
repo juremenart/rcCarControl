@@ -25,8 +25,8 @@
 #include <media/videobuf2-v4l2.h>
 #include <media/videobuf2-dma-contig.h>
 
-#define XRCC_DEBUG(...)
-//#define XRCC_DEBUG(...) dev_info(__VA_ARGS__)
+//#define XRCC_DEBUG(...)
+#define XRCC_DEBUG(...) dev_info(__VA_ARGS__)
 #define XRCC_INFO(...)  dev_info(__VA_ARGS__)
 #define XRCC_ERR(...)   dev_err(__VA_ARGS__)
 
@@ -129,10 +129,10 @@ static struct device *xrcc_dev_to_dev(xrcc_cam_dev_t *dev)
 #define VIDEO_CTRL_RX_FRAME_LEN  0x18
 #define VIDEO_CTRL_RX_FIFO_CTRL  0x1C
 
-#define VIDEO_CTRL_RX_CTRL_RUN   0x01
-#define VIDEO_CTRL_RX_CTRL_INTEN 0x10
-#define VIDEO_CTRL_RX_CTRL_INT   0x20
-
+#define VIDEO_CTRL_RX_CTRL_RUN       0x01
+#define VIDEO_CTRL_RX_CTRL_INTEN     0x10
+#define VIDEO_CTRL_RX_CTRL_INT       0x20
+#define VIDEO_CTRL_RX_CTRL_EMB_FMCNT 0x40
 // Write pointer - last pointer that was written by VDMA
 #define VIDEO_CTRL_WR_PTR_SHIFT  24
 // Read pointer - can be set by this driver to protect one buffer (which
@@ -189,7 +189,13 @@ static inline void video_ctrl_inten(xrcc_cam_dev_t *dev, int int_enable)
 static inline void video_ctrl_run(xrcc_cam_dev_t *dev)
 {
     int ctrl = video_ctrl_read(dev, VIDEO_CTRL_RX_CTRL);
-    video_ctrl_write(dev, VIDEO_CTRL_RX_CTRL, ctrl | VIDEO_CTRL_RX_CTRL_RUN);
+
+    video_ctrl_write(dev, VIDEO_CTRL_RX_CTRL, ctrl | VIDEO_CTRL_RX_CTRL_RUN
+#ifdef EMB_FRAME_CNT
+                     | VIDEO_CTRL_RX_CTRL_EMB_FMCNT
+#endif
+        );
+
 }
 
 static inline void video_ctrl_stop(xrcc_cam_dev_t *dev)
@@ -746,7 +752,7 @@ static int xrcc_cam_s_input(struct file *file, void *priv, unsigned int i)
 static int xrcc_cam_enum_input(struct file *file, void *priv,
                                struct v4l2_input *inp)
 {
-    xrcc_cam_dev_t *dev = file->private_data;
+    xrcc_cam_dev_t *dev = video_drvdata(file);
 
     if (inp->index != 0)
         return -EINVAL;
@@ -762,7 +768,7 @@ static int xrcc_cam_enum_input(struct file *file, void *priv,
 static int xrcc_cam_g_selection(struct file *file, void *fh,
                                 struct v4l2_selection *s)
 {
-    xrcc_cam_dev_t *dev = file->private_data;
+    xrcc_cam_dev_t *dev = video_drvdata(file);
 
     /* With a wrong type no need to try to fall back to cropping */
     if (s->type != V4L2_BUF_TYPE_VIDEO_CAPTURE)
@@ -771,7 +777,8 @@ static int xrcc_cam_g_selection(struct file *file, void *fh,
     if(dev->fmt_idx >= xrcc_cam_formats_num)
     {
         XRCC_ERR(xrcc_dev_to_dev(dev),
-                 "xrcc_cam_g_sel(): Format index out of range");
+                 "xrcc_cam_g_sel(): Format index out of range"
+                 "(%d > %d)", dev->fmt_idx, xrcc_cam_formats_num);
         return -EINVAL;
     }
 
@@ -786,7 +793,7 @@ static int xrcc_cam_g_selection(struct file *file, void *fh,
 static int xrcc_cam_s_selection(struct file *file, void *fh,
                                 struct v4l2_selection *s)
 {
-//    xrcc_cam_dev_t *dev = file->private_data;
+//    xrcc_cam_dev_t *dev = video_drvdata(file);
 
     /* TODO: selection not supported yet - ignore it */
     return 0;
@@ -795,7 +802,7 @@ static int xrcc_cam_s_selection(struct file *file, void *fh,
 static int xrcc_cam_g_parm(struct file *file, void *fh,
                            struct v4l2_streamparm *a)
 {
-//    xrcc_cam_dev_t *dev = file->private_data;
+//    xrcc_cam_dev_t *dev = video_drvdata(file);
 
     a->parm.output.capability   = V4L2_CAP_TIMEPERFRAME;
     a->parm.output.timeperframe = (struct v4l2_fract) { 1000, 15000 };
@@ -807,7 +814,7 @@ static int xrcc_cam_g_parm(struct file *file, void *fh,
 static int xrcc_cam_s_parm(struct file *file, void *fh,
                            struct v4l2_streamparm *a)
 {
-//    xrcc_cam_dev_t *dev = file->private_data;
+//    xrcc_cam_dev_t *dev = video_drvdata(file);
 
     /* TODO: Not supported yet */
 
@@ -913,19 +920,19 @@ static irqreturn_t xrcc_cam_irq_handler(int irq, void *data)
 
 #ifdef EMB_FRAME_CNT
     {
-        uint8_t *buf_addr = (uint8_t *)dev->vect_bufs[idx].addr;
-        buf_addr[EMB_DRV_FRAME_CNT_LSB] = dev->frame_cnt & 0xff;
-        buf_addr[EMB_DRV_FRAME_CNT_MSB] = (dev->frame_cnt>>8) & 0xff;
+//        uint8_t *buf_addr = (uint8_t *)dev->vect_bufs[idx].addr;
+//        buf_addr[EMB_DRV_FRAME_CNT_LSB] = dev->frame_cnt & 0xff;
+//        buf_addr[EMB_DRV_FRAME_CNT_MSB] = (dev->frame_cnt>>8) & 0xff;
         dev->frame_cnt++;
 
 #ifdef EMB_FRAME_CNT_DEBUG
         {
-            uint16_t hw_cnt, drv_cnt;
+            uint16_t hw_cnt = 4, drv_cnt = 3;
             // Let's also read out first 4 bytes (2 frame counters)
-            hw_cnt = (buf_addr[EMB_HW_FRAME_CNT_MSB] << 8) |
-                buf_addr[EMB_HW_FRAME_CNT_LSB];
-            drv_cnt = (buf_addr[EMB_DRV_FRAME_CNT_MSB] << 8) |
-                buf_addr[EMB_DRV_FRAME_CNT_LSB];
+//            hw_cnt = (buf_addr[EMB_HW_FRAME_CNT_MSB] << 8) |
+//                buf_addr[EMB_HW_FRAME_CNT_LSB];
+//            drv_cnt = (buf_addr[EMB_DRV_FRAME_CNT_MSB] << 8) |
+//                buf_addr[EMB_DRV_FRAME_CNT_LSB];
 
             XRCC_DEBUG(xrcc_dev_to_dev(dev),
                        "Frame counters: HW=%d, DRV=%d", hw_cnt, drv_cnt);
@@ -1128,7 +1135,7 @@ static int xrcc_cam_probe(struct platform_device *pdev)
 
     // start filling the structure
     xrcc_dev->num_frm_bufs = num_frm_bufs;
-
+    xrcc_dev->fmt_idx = 0;
     err = xrcc_cam_v4l2_init(xrcc_dev);
     if(err)
     {

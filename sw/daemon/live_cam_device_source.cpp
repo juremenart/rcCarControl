@@ -1,3 +1,5 @@
+#ifdef USE_LIVE555
+
 #include <iostream>
 
 #include <GroupsockHelper.hh>
@@ -167,3 +169,5 @@ u_int8_t const* LiveCamDeviceSource::quantizationTable(u_int8_t& precision,
     return mJpegFrameParser->quantizationTables(length);
 }
 
+
+#endif // USE_LIVE555

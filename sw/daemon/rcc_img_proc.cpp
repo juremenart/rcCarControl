@@ -93,6 +93,7 @@ bool rccImgProc::readFrame(cv::Mat &frame)
 
     m_videoCap >> frame;
 
+
     return true;
 }
 

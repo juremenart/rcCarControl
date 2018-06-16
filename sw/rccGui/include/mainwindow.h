@@ -9,6 +9,7 @@
 
 #include "rccCtrlWidget.h"
 #include "rccDrvWidget.h"
+#include "rccCamWidget.h"
 
 namespace Ui {
 class MainWindow;
@@ -33,6 +34,7 @@ private:
 
     rccCtrlWidget  *mCtrlWidget;
     rccDrvWidget   *mDrvWidget;
+    rccCamWidget   *mCamWidget;
 };
 
 #endif // MAINWINDOW_H

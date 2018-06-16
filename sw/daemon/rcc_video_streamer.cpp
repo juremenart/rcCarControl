@@ -1,10 +1,13 @@
+#include <unistd.h>
+
+#include "rcci_type.h"
 #include "rcc_video_streamer.h"
 
 rccVideoStreamer::rccVideoStreamer(void)
+#ifdef USE_LIVE555
     : mServerStarted(0), mServerThread(NULL),
-      mLiveEnv(NULL), mLiveScheduler(NULL),
-      mLiveSink(NULL), mRtspServer(NULL),
-      mLiveRtcp(NULL)
+      mLiveEnv(NULL), mLiveScheduler(NULL), mRtspServer(NULL)
+#endif // USE_LIVE555
 {
     mRccStreams.resize(0);
 }
@@ -16,6 +19,7 @@ rccVideoStreamer::~rccVideoStreamer(void)
 
 bool rccVideoStreamer::startServer(int port)
 {
+#ifdef USE_LIVE555
     // start server thread now
     mServerThread = new std::thread(&rccVideoStreamer::serverThread, this,
                                     port);
@@ -31,7 +35,7 @@ bool rccVideoStreamer::startServer(int port)
         stopServer();
         return false;
     }
-
+#endif // USE_LIVE555
     return true;
 }
 
@@ -39,17 +43,22 @@ bool rccVideoStreamer::startServer(int port)
 bool rccVideoStreamer::stopServer(void)
 {
     // clean-up everything carefully (this is also cleanup method)
-    if(mLiveSink)
-    {
-        mLiveSink->stopPlaying();
-    }
+//    if(mLiveSink)
+//    {
+//        mLiveSink->stopPlaying();
+//    }
 
     for(auto it = mRccStreams.begin(); it != mRccStreams.end(); ++it)
     {
+#ifdef USE_LIVE555
         if(it->devSource)
             Medium::close(it->devSource);
+        closeMulticastSocket(it->sock);
+#endif // USE_LIVE555
     }
+    mRccStreams.resize(0);
 
+#ifdef USE_LIVE555
     if(mServerThread)
     {
         mServerStarted = 0; // to signal scheduler we want to finish
@@ -65,18 +74,6 @@ bool rccVideoStreamer::stopServer(void)
         mRtspServer = NULL;
     }
 
-    if(mLiveRtcp)
-    {
-        // This is protected destructor - how to mark it NULL?
-        //delete mLiveRtcp;
-        mLiveRtcp = NULL;
-    }
-    if(mLiveSink)
-    {
-        // This is protected destructor - how to mark it NULL?
-        //delete mLiveSink;
-        mLiveSink = NULL;
-    }
     if(mLiveEnv)
     {
         // This is protected destructor - how to mark it NULL?
@@ -89,30 +86,43 @@ bool rccVideoStreamer::stopServer(void)
         delete mLiveScheduler;
         mLiveScheduler = NULL;
     }
+#endif // USE_LIVE555
+
     return true;
 }
 
 bool rccVideoStreamer::isServerStarted(void)
 {
+#ifdef USE_LIVE555
     // check all relevant stuff...overkill?
-    return (mServerStarted == 1) && mServerThread &&
-        mLiveEnv && mLiveScheduler && mRtspServer &&
-        mLiveSink;
+    return (mServerStarted == 1) && mServerThread
+        && mLiveEnv && mLiveScheduler && mRtspServer;
+#endif // USE_LIVE555
+#ifdef USE_UDP_MULTICAST
+    return (mRccStreams.size() > 0) ? true : false;
+#endif
 }
 
+
 rccVideoStreamer::rcc_stream_id_t rccVideoStreamer::addStream(const char *streamName,
-                                                              int fps)
+                                                              int fps, int port)
 {
+    rcc_streams_info_t new_stream;
+
+    new_stream.name = std::string(streamName);
+    new_stream.fps = fps;
+
+#ifdef USE_LIVE555
+    const unsigned char ttl = 255;
+    Port rtpPort(18888);
+    Port rtcpPort(18888+1);
+
     // Add session
     if(!isServerStarted())
     {
         return -1;
     }
 
-    rcc_streams_info_t new_stream;
-
-    new_stream.name = std::string(streamName);
-    new_stream.fps = fps;
 //    new_stream.devSource = LiveCamDeviceSource::createNew(*mLiveEnv);
     new_stream.devSource = new LiveCamDeviceSource(*mLiveEnv);
     if(new_stream.devSource == NULL)
@@ -123,6 +133,31 @@ rccVideoStreamer::rcc_stream_id_t rccVideoStreamer::addStream(const char *stream
         throw t;
     }
 
+    // create groupsocks for RTP & RTCP
+    struct in_addr dstAddr;
+    dstAddr.s_addr = chooseRandomIPv4SSMAddress(*mLiveEnv);
+    // This is multicast address
+
+    Groupsock rtpGroupsock(*mLiveEnv, dstAddr, rtpPort, ttl);
+    rtpGroupsock.multicastSendOnly();
+    Groupsock rtcpGroupsock(*mLiveEnv, dstAddr, rtcpPort, ttl);
+    rtcpGroupsock.multicastSendOnly();
+
+    // Create RTP sink for JPEG (currently only one supported)
+    RTPSink *mLiveSink = JPEGVideoRTPSink::createNew(*mLiveEnv, &rtpGroupsock);
+
+    // Create and start RTCP instance for this RTP sink:
+    const unsigned estSessionBandwidth = 500;
+    const unsigned maxCNAMElen = 100;
+    unsigned char CNAME[maxCNAMElen+1];
+    gethostname((char *)CNAME, maxCNAMElen);
+    CNAME[maxCNAMElen]='\0';
+
+    RTCPInstance *mLiveRtcp = RTCPInstance::createNew(*mLiveEnv, &rtcpGroupsock,
+                                                      estSessionBandwidth, CNAME,
+                                                      mLiveSink, NULL, True);
+
+    // Create RTSP server
     const char *descString = "Streamed by RCC video streamer";
     ServerMediaSession *sms = ServerMediaSession::createNew(*mLiveEnv,
                                                             streamName,
@@ -143,6 +178,51 @@ rccVideoStreamer::rcc_stream_id_t rccVideoStreamer::addStream(const char *stream
     *mLiveEnv << "Starting server thread for URL: " <<
         new_stream.url.c_str() << "\n";
 
+
+#endif // USE_LIVE555
+
+#ifdef USE_UDP_MULTICAST
+    new_stream.port = port;
+    new_stream.sock = openMulticastSocket();
+    if(new_stream.sock < 0)
+    {
+        return -1;
+    }
+
+    memset(&new_stream.addr, 0, sizeof(struct sockaddr_in));
+    new_stream.addr.sin_family      = PF_INET;
+    new_stream.addr.sin_addr.s_addr = htonl(INADDR_ANY);
+//    new_stream.addr.sin_addr.s_addr = inet_addr("226.0.0.1");
+    new_stream.addr.sin_port        = htons(0);
+
+    if(bind(new_stream.sock, (struct sockaddr *)&new_stream.addr,
+            sizeof(struct sockaddr_in)) < 0)
+    {
+        std::cerr << "bind() failed: " << strerror(errno) << std::endl;
+        return -1;
+    }
+
+    struct in_addr iaddr;
+    iaddr.s_addr = INADDR_ANY; // use DEFAULT interface
+
+    // Set the outgoing interface to DEFAULT
+    setsockopt(new_stream.sock, IPPROTO_IP, IP_MULTICAST_IF, &iaddr,
+               sizeof(struct in_addr));
+
+    // Set multicast packet TTL to 3; default TTL is 1
+    unsigned char ttl = 3;
+    setsockopt(new_stream.sock, IPPROTO_IP, IP_MULTICAST_TTL, &ttl,
+               sizeof(unsigned char));
+
+    new_stream.addr.sin_family      = PF_INET;
+    new_stream.addr.sin_addr.s_addr = inet_addr("226.0.0.1");
+    new_stream.addr.sin_port        = htons(port);
+
+    std::cout << "New multicast stream '" << new_stream.name
+              << "' opened at port: " << port << std::endl;
+
+#endif // USE_UDP_MULTICAST
+
     mRccStreams.push_back(new_stream);
 
     return mRccStreams.size()-1;
@@ -153,19 +233,21 @@ bool rccVideoStreamer::encodeAndStream(rccVideoStreamer::rcc_stream_id_t stream_
 {
     if(isServerStarted() && ((size_t)stream_id < mRccStreams.size()))
     {
+#ifdef USE_LIVE555
         LiveCamDeviceSource *camDevice = mRccStreams[stream_id].devSource;
         return camDevice->encodeAndStream(camDevice, frame);
+#endif // USE_LIVE555
+#ifdef USE_UDP_MULTICAST
+        return (sendMulticastData(stream_id, frame) > 0) ? true : false;
+#endif // USE_UDP_MULTICAST
     }
 
     return false;
 }
 
+#ifdef USE_LIVE555
 void rccVideoStreamer::serverThread(int port)
 {
-    const unsigned char ttl = 255;
-    Port rtpPort(18888);
-    Port rtcpPort(18888+1);
-
     // if already running keep it that way
     if(isServerStarted())
     {
@@ -176,30 +258,6 @@ void rccVideoStreamer::serverThread(int port)
 
     mLiveScheduler = BasicTaskScheduler::createNew();
     mLiveEnv = BasicUsageEnvironment::createNew(*mLiveScheduler);
-
-    // create groupsocks for RTP & RTCP
-    struct in_addr dstAddr;
-    dstAddr.s_addr = chooseRandomIPv4SSMAddress(*mLiveEnv);
-    // This is multicast address
-
-    Groupsock rtpGroupsock(*mLiveEnv, dstAddr, rtpPort, ttl);
-    rtpGroupsock.multicastSendOnly();
-    Groupsock rtcpGroupsock(*mLiveEnv, dstAddr, rtcpPort, ttl);
-    rtcpGroupsock.multicastSendOnly();
-
-    // Create RTP sink for JPEG (currently only one supported)
-    mLiveSink = JPEGVideoRTPSink::createNew(*mLiveEnv, &rtpGroupsock);
-
-    // Create and start RTCP instance for this RTP sink:
-    const unsigned estSessionBandwidth = 500;
-    const unsigned maxCNAMElen = 100;
-    unsigned char CNAME[maxCNAMElen+1];
-    gethostname((char *)CNAME, maxCNAMElen);
-    CNAME[maxCNAMElen]='\0';
-
-    mLiveRtcp = RTCPInstance::createNew(*mLiveEnv, &rtcpGroupsock,
-                                        estSessionBandwidth, CNAME,
-                                        mLiveSink, NULL, True);
 
     // Create RTSP server
     mRtspServer = RTSPServer::createNew(*mLiveEnv, port);
@@ -219,4 +277,105 @@ void rccVideoStreamer::serverThread(int port)
 
     mLiveEnv->taskScheduler().doEventLoop();
 }
+#endif // USE_LIVE555
 
+
+#ifdef USE_UDP_MULTICAST
+int rccVideoStreamer::openMulticastSocket(void)
+{
+    int fd;
+
+    if((fd=socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+    {
+        std::string t(std::string("Failed to open new socket: ")+
+                      std::string(strerror(errno)));
+        std::cerr << t << std::endl;
+        return -1;
+    }
+
+    return fd;
+}
+
+int rccVideoStreamer::closeMulticastSocket(int sock)
+{
+    ::shutdown(sock, 2);
+    return ::close(sock);
+}
+
+int rccVideoStreamer::sendMulticastData(rccVideoStreamer::rcc_stream_id_t stream_id,
+                                        cv::Mat &frame)
+{
+    rcci_msg_vframe_t videoFrame;
+
+    std::vector<uchar> encodedBuffer;
+    static std::vector<int> encodingVar;
+    const u_int8_t cQFactor = 70;
+    int retVal;
+
+    if((size_t)stream_id >= mRccStreams.size())
+    {
+        return -1;
+    }
+
+    if(encodingVar.size() > 0)
+    {
+        encodingVar.resize(0);
+        encodingVar.push_back(CV_IMWRITE_JPEG_QUALITY);
+        encodingVar.push_back(cQFactor);
+    }
+
+    cv::imencode(".jpg", frame, encodedBuffer, encodingVar);
+
+    videoFrame.header.magic = rcci_msg_init_magic;
+
+    if(encodedBuffer.size() > rcci_msg_vframe_max_frame)
+    {
+        std::cerr << "Buffer not large enough!" << std::endl;
+        return -1;
+    }
+
+    memcpy(&videoFrame.frame[0], encodedBuffer.data(), encodedBuffer.size());
+
+    videoFrame.header.size = sizeof(rcci_msg_header_t) + encodedBuffer.size();
+
+    uint8_t *msgBuffer = (uint8_t *)&videoFrame;
+    int msgCounter = 0;
+    const int msgLength = (1<<16)-40; // max one for UDP
+
+    while(msgCounter < videoFrame.header.size)
+    {
+        int sendBytes = msgLength;
+        if((videoFrame.header.size - msgCounter) < msgLength)
+        {
+            sendBytes = videoFrame.header.size - msgCounter;
+        }
+
+        std::cout << "Sending out " << (int)sendBytes << " bytes" << std::endl;
+        retVal = ::sendto(mRccStreams[stream_id].sock,
+//                          (void *)&videoFrame, videoFrame.header.size, 0,
+                          (void *)&msgBuffer[msgCounter], sendBytes, 0,
+                          (struct sockaddr *)&mRccStreams[stream_id].addr,
+                          sizeof(mRccStreams[stream_id].addr));
+
+        msgCounter += sendBytes;
+        if(retVal < 0)
+        {
+            std::cerr << "sendto() failed: " << strerror(errno) << std::endl;
+            msgCounter = retVal;
+            break;
+        }
+        if(retVal != sendBytes)
+        {
+            std::cerr << "sendto() wrong return: " << sendBytes << " != " <<
+                retVal << std::endl;
+        }
+    }
+
+    std::cout << "Sending new frame stream_id=" << stream_id << " numStreams="
+              << mRccStreams.size()  << " frame size=" << videoFrame.header.size
+              << " ret val=" << msgCounter << std::endl;
+
+    return (int)msgCounter;
+}
+
+#endif // USE_UDP_MULTICAST

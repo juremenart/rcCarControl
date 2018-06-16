@@ -128,7 +128,7 @@ int main(int argc, char *argv[])
                 goto end;
             }
 
-            origStreamId = videoStreamer->addStream(origName, fps);
+            origStreamId = videoStreamer->addStream(origName, fps, serverPort);
             if(origStreamId < 0)
             {
                 std::cerr << "Could not add stream " << origName << std::endl;
@@ -136,7 +136,7 @@ int main(int argc, char *argv[])
             }
 
 #if 0
-            greyStreamId = videoStreamer->addStream(greyName, fps);
+            greyStreamId = videoStreamer->addStream(greyName, fps, serverPort+1);
             if(greyStreamId < 0)
             {
                 std::cerr << "Could not add stream " << greyName << std::endl;

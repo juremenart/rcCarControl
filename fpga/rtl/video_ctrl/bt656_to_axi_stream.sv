@@ -53,7 +53,6 @@ module bt656_to_axi_stream
    logic         latch_pixel_cnt;
 
    // embedding of frame counter control
-   logic         emb_frame_cnt_next_data; // signalizes we should embedded when next data is valid
    logic [15:0]  emb_frame_cnt;
    logic         emb_frame_msb, emb_frame_lsb;
    logic         emb_frame_waiting;
@@ -81,7 +80,6 @@ module bt656_to_axi_stream
         nstate                  = state;
         rst_pixel_cnt           = 1'b1;
         latch_pixel_cnt         = 1'b0;
-        emb_frame_cnt_next_data = 1'b0;
 
         case (state)
           FSM_IDLE:
@@ -91,10 +89,10 @@ module bt656_to_axi_stream
                if(in_new_frame && rx_cfg.pure_bt656)
                  nstate = FSM_SAV;
                else if(in_new_frame && !rx_cfg.pure_bt656)
-                 if(rx_cfg.emb_frame_cnt)
-                   emb_frame_cnt_next_data = 1'b1;
+                 begin
 
-                 nstate = FSM_BLANKING;
+                    nstate = FSM_BLANKING;
+                 end
             end
           FSM_SAV:
             begin
@@ -157,7 +155,7 @@ module bt656_to_axi_stream
        end
      else
        begin
-          if(emb_frame_cnt_next_data)
+          if(in_new_frame && !rx_cfg.pure_bt656 && rx_cfg.emb_frame_cnt)
             begin
                emb_frame_waiting <= 1'b1;
                emb_frame_cnt     <= rx_cfg.frame_cnts[15:0];
@@ -259,9 +257,9 @@ module bt656_to_axi_stream
    // We receive:
    // Cb0 Y0 Cr0 Y1 and we must create two output data packets:
    // Cb0Cr0Y0 and Cb0Cr0Y1
-   logic [11:0] pixel_cnt;
-   logic [11:0] line_cnt;
-   logic [11:0] width_cnt, height_cnt;
+   logic [12:0] pixel_cnt;
+   logic [12:0] line_cnt;
+   logic [12:0] width_cnt, height_cnt;
 
    logic        width_err, height_err;
 
@@ -277,8 +275,8 @@ module bt656_to_axi_stream
    logic        data_fifo_full;
 
    // Size FIFO (only status)
-   assign size_fifo_data = { height_err, {3{1'b0}}, height_cnt,
-                             width_err, {3{1'b0}}, width_cnt };
+   assign size_fifo_data = { height_err, {2{1'b0}}, height_cnt,
+                             width_err, {2{1'b0}}, width_cnt };
 
    assign data_fifo_write = (state == FSM_VDATA) && !data_fifo_full;
 
@@ -312,12 +310,9 @@ module bt656_to_axi_stream
             end
           if(latch_pixel_cnt)
             begin
-               // divide by two - we have 2 datas for each pixel - and add one
-               // before that because we are counting from 0
-               logic [12:0] pixel_cnt_msbs = (pixel_cnt+1);
-               if(((width_cnt != pixel_cnt_msbs[12:1]) && (width_cnt != {12{1'b1}})))
+               if(((width_cnt != pixel_cnt) && (width_cnt != {13{1'b1}})))
                  width_err <= 1'b1;
-               width_cnt <= pixel_cnt_msbs[12:1];
+               width_cnt <= pixel_cnt;
             end
           else if(rst_pixel_cnt)
             pixel_cnt <= '0;
@@ -326,11 +321,11 @@ module bt656_to_axi_stream
 
           if(rst_line_cnt)
             begin
-               if(((height_cnt != line_cnt) && (line_cnt != {12{1'b1}})))
+               if(((height_cnt != line_cnt) && (line_cnt != {13{1'b1}})))
                  height_err <= 1'b1;
                height_cnt <= line_cnt;
                line_cnt <= '0;
-               if(height_cnt != {12{1'b1}})
+               if(height_cnt != {13{1'b1}})
                  fifo_write <= 1'b1;
             end
           else if(inc_line_cnt)

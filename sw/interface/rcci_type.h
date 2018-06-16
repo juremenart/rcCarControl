@@ -43,7 +43,7 @@ typedef struct rcci_msg_header_s {
     uint16_t      magic;     //!< Magic word/packet identifier
     uint16_t      ver;       //!< Protocol version
     rcci_msg_id_t type;      //!< Message type id
-    uint16_t      size;      //!< Size of message (includes header)
+    uint32_t      size;      //!< Size of message (includes header)
     uint32_t      crc;       //!< Message CRC
 } rcci_msg_header_t;
 
@@ -75,5 +75,12 @@ typedef struct rcci_msg_drv_ctrl_s {
     int32_t           drive;  //!< New drive value
     int32_t           steer;  //!< New stearing value
 } rcci_msg_drv_ctrl_t;
+
+const int32_t rcci_msg_vframe_max_frame = (640*480*3);
+const int32_t rcci_msg_vframe_max_packet_size = ((1<<16)-40);
+typedef struct rcci_msg_vframe_s {
+    rcci_msg_header_t header;
+    uint8_t           frame[rcci_msg_vframe_max_frame];
+} rcci_msg_vframe_t;
 
 #endif // __RCCI__TYPE_H

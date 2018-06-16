@@ -1,6 +1,8 @@
 #ifndef LIVE_CAM_DEVICE_SOURCE_H
 #define LIVE_CAM_DEVICE_SOURCE_H
 
+#ifdef USE_LIVE555
+
 // Requires www.live555.com
 #include <FramedSource.hh>
 
@@ -50,5 +52,7 @@ protected:
 
     std::mutex mBufferProt;
 };
+
+#endif // USE_LIVE555
 
 #endif // LIVE_CAM_DEVICE_SOURCE_H

@@ -76,11 +76,22 @@ typedef struct rcci_msg_drv_ctrl_s {
     int32_t           steer;  //!< New stearing value
 } rcci_msg_drv_ctrl_t;
 
-const int32_t rcci_msg_vframe_max_frame = (640*480*3);
 const int32_t rcci_msg_vframe_max_packet_size = ((1<<16)-40);
+const int32_t rcci_msg_vframe_max_frame_size =
+    (rcci_msg_vframe_max_packet_size - sizeof(rcci_msg_header_t) -
+     sizeof(uint32_t) * 2 - sizeof(uint8_t)-3);
+
 typedef struct rcci_msg_vframe_s {
     rcci_msg_header_t header;
-    uint8_t           frame[rcci_msg_vframe_max_frame];
+    uint32_t          size_frame; // size of this frame
+    uint32_t          idx_frame; // index of this frame
+    uint8_t           cnt_frame; // frame counter
+    uint8_t           all_msgs; // all messages needed for current frame
+    uint8_t           cur_msg;  // number of current message
+    uint8_t           frame[rcci_msg_vframe_max_frame_size];
 } rcci_msg_vframe_t;
+
+const int32_t rcci_msg_vframe_header_size =
+    sizeof(rcci_msg_vframe_s) - sizeof(uint8_t) * rcci_msg_vframe_max_frame_size;
 
 #endif // __RCCI__TYPE_H

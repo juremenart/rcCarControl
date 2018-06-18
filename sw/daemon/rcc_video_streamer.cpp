@@ -35,6 +35,8 @@ bool rccVideoStreamer::startServer(int port)
         stopServer();
         return false;
     }
+#else // USE_LIVE555
+    (void)port;
 #endif // USE_LIVE555
     return true;
 }
@@ -312,6 +314,9 @@ int rccVideoStreamer::sendMulticastData(rccVideoStreamer::rcc_stream_id_t stream
     const u_int8_t cQFactor = 70;
     int retVal;
 
+    // TODO: Change this horrible instantiation to class member :)
+    static uint8_t frameCnt = 0;
+
     if((size_t)stream_id >= mRccStreams.size())
     {
         return -1;
@@ -334,30 +339,45 @@ int rccVideoStreamer::sendMulticastData(rccVideoStreamer::rcc_stream_id_t stream
         return -1;
     }
 
-    memcpy(&videoFrame.frame[0], encodedBuffer.data(), encodedBuffer.size());
-
-    videoFrame.header.size = sizeof(rcci_msg_header_t) + encodedBuffer.size();
-
-    uint8_t *msgBuffer = (uint8_t *)&videoFrame;
-    int msgCounter = 0;
-    const int msgLength = (1<<16)-40; // max one for UDP
+    uint32_t msgCounter = 0;
+    const int maxMsgLength = rcci_msg_vframe_max_packet_size; // max one for UDP
+    const int maxFrameLength = maxMsgLength - rcci_msg_vframe_header_size;
+    uint8_t *frameBuffer = encodedBuffer.data();
+    uint8_t  cnt_msg = 0;
+    //memcpy(&videoFrame.frame[0], encodedBuffer.data(), encodedBuffer.size());
+    videoFrame.header.size = encodedBuffer.size();
+    videoFrame.cnt_frame = frameCnt++;
+    videoFrame.all_msgs = ((videoFrame.header.size+maxMsgLength) / maxMsgLength);
 
     while(msgCounter < videoFrame.header.size)
     {
-        int sendBytes = msgLength;
-        if((videoFrame.header.size - msgCounter) < msgLength)
+        int sendBytes =
+            (videoFrame.header.size - msgCounter) + rcci_msg_vframe_header_size;
+        if(sendBytes > maxMsgLength)
         {
-            sendBytes = videoFrame.header.size - msgCounter;
+            sendBytes = maxMsgLength;
         }
 
-        std::cout << "Sending out " << (int)sendBytes << " bytes" << std::endl;
+        videoFrame.size_frame = sendBytes - rcci_msg_vframe_header_size;
+        videoFrame.idx_frame = msgCounter;
+        videoFrame.cur_msg = cnt_msg++;
+
+//        std::cout << "Copying from " << msgCounter << " bytes " <<
+//            sendBytes-rcci_msg_vframe_header_size << std::endl;
+//        std::cout << "Sending out " << (int)sendBytes << " bytes" <<
+//            " cur_msg=" << (int)videoFrame.cur_msg << std::endl;
+
+        memcpy(&videoFrame.frame[0], (void *)&frameBuffer[msgCounter],
+               videoFrame.size_frame);
+
         retVal = ::sendto(mRccStreams[stream_id].sock,
 //                          (void *)&videoFrame, videoFrame.header.size, 0,
-                          (void *)&msgBuffer[msgCounter], sendBytes, 0,
+                          (void *)&videoFrame, sendBytes, 0,
                           (struct sockaddr *)&mRccStreams[stream_id].addr,
                           sizeof(mRccStreams[stream_id].addr));
 
-        msgCounter += sendBytes;
+        msgCounter += sendBytes - rcci_msg_vframe_header_size;
+
         if(retVal < 0)
         {
             std::cerr << "sendto() failed: " << strerror(errno) << std::endl;

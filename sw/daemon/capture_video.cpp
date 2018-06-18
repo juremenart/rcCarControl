@@ -24,7 +24,7 @@
 
 #include "rcc_video_streamer.h"
 
-//#define TRACK_TIME
+#define TRACK_TIME
 //#define USE_OV5642
 bool strIsNumber(const std::string& s)
 {
